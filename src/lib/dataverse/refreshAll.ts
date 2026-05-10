@@ -1,6 +1,7 @@
 import { getDataverseClient, type DataverseClient } from "@/lib/dataverse";
 import type { ODataQuery } from "@/lib/dataverse/odata";
 import { readCache, writeCache } from "@/lib/storage/entityCache";
+import { fetchActualExpenseRollupForAllProjects } from "@/lib/dataverse/actualExpenseRollup";
 import {
   PROJECT_COLUMNS,
   PROJECT_LINE_COLUMNS,
@@ -90,6 +91,12 @@ const SALES_ENTITY = "mserp_tryaicustinvoicetransentities";
  *  client-side or to chain a server-side `not In(...)` clause. */
 export const FINANCING_SALES_IDS_CACHE = "financingSalesIds";
 export const FINANCING_PURCH_IDS_CACHE = "financingPurchIds";
+
+/** Synthetic cache key for the tenant-wide realised-expense rollup
+ *  the P&L Cost report reads. NOT a real Dataverse entity set —
+ *  populated by `fetchActualExpenseRollupForAllProjects` in the
+ *  refresh chain. Format: `ActualExpenseRollupRow[]`. */
+export const ACTUAL_EXPENSE_ROLLUP_CACHE = "actualExpenseRollup";
 
 export interface RefreshProgress {
   /** 1-based step index. */
@@ -740,6 +747,28 @@ export async function refreshAllEntities(
           fetchedAt: new Date().toISOString(),
           value: all,
           totalCount,
+        });
+      },
+    },
+    {
+      // Tenant-wide realised-expense rollup for the P&L Cost report.
+      // 4-stage chunked pipeline (inventdimb + dist + expense-line +
+      // refmap, refmap parallel with inventdimb). Emits one row per
+      // (projectNo, expenseId) with the refmap label joined and
+      // code 710041 (Satış Fiyat Farkı) applied as a negative
+      // contribution. Adds ~5–10s to the refresh on this tenant;
+      // cache is small (~1600 rows) since aggregation drops ham
+      // expense voucher rows. See `actualExpenseRollup.ts`.
+      label: "Gerçekleşen Gider Toplamları",
+      run: async () => {
+        const projids = readProjids();
+        const rollup = await fetchActualExpenseRollupForAllProjects(
+          client,
+          projids
+        );
+        writeCache(ACTUAL_EXPENSE_ROLLUP_CACHE, {
+          fetchedAt: new Date().toISOString(),
+          value: rollup,
         });
       },
     },
