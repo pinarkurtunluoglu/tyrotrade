@@ -95,7 +95,7 @@ export function PLCostTable({
                 className="sticky left-0 z-30 bg-foreground/[0.06] backdrop-blur-md px-3 py-2.5 text-left font-semibold text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border/40 min-w-[280px]"
                 style={{ minWidth: 280 }}
               >
-                Segment / Statü / Proje / Kalem
+                Segment Kırılımı
               </th>
               <Th>Tahmini USD</Th>
               <Th>Gerçekleşen USD</Th>
