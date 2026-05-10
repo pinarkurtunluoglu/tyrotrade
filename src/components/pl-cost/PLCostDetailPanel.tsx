@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { X } from "lucide-react";
+import { ArrowUpRight, X } from "lucide-react";
+import { Link } from "react-router-dom";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Globe02Icon,
@@ -138,11 +139,25 @@ function Body({ node, onClose }: { node: PLCostNode; onClose: () => void }) {
             {meta.label}
           </div>
           <div className="text-[16px] font-bold tracking-tight leading-tight truncate mt-0.5">
-            {node.label}
+            {looksLikeProjectNo(node.label) ? (
+              <ProjectNoLink
+                projectNo={node.label}
+                className="text-[16px] font-bold tracking-tight"
+              />
+            ) : (
+              node.label
+            )}
           </div>
           {node.subLabel && (
-            <div className="text-[11.5px] text-muted-foreground font-mono truncate mt-0.5">
-              {node.subLabel}
+            <div className="text-[11.5px] text-muted-foreground truncate mt-0.5">
+              {looksLikeProjectNo(node.subLabel) ? (
+                <ProjectNoLink
+                  projectNo={node.subLabel}
+                  className="text-[11.5px] text-muted-foreground hover:text-foreground"
+                />
+              ) : (
+                <span className="font-mono">{node.subLabel}</span>
+              )}
             </div>
           )}
         </div>
@@ -459,9 +474,10 @@ function ExpenseRowsTable({
                 className="hover:bg-foreground/[0.04] border-b border-border/20 last:border-b-0"
               >
                 <Td>
-                  <span className="font-mono text-[10px] text-muted-foreground/80">
-                    {r.projectNo}
-                  </span>
+                  <ProjectNoLink
+                    projectNo={r.projectNo}
+                    className="text-[10px] text-muted-foreground/80 hover:text-foreground"
+                  />
                 </Td>
                 <Td>
                   <div className="font-medium truncate">
@@ -502,12 +518,19 @@ function ProjectListSection({ projectNos }: { projectNos: string[] }) {
       </div>
       <div className="flex flex-wrap gap-1">
         {visible.map((no) => (
-          <span
+          <Link
             key={no}
-            className="inline-flex items-center px-2 py-0.5 rounded-full bg-foreground/[0.06] text-[10.5px] font-mono"
+            to={`/projects/${no}`}
+            onClick={(e) => e.stopPropagation()}
+            title={`${no} projesini Vessel Projects'te aç`}
+            className="group inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-foreground/[0.06] hover:bg-foreground/[0.10] text-[10.5px] font-mono transition-colors"
           >
             {no}
-          </span>
+            <ArrowUpRight
+              className="size-2.5 opacity-0 -translate-x-0.5 group-hover:opacity-70 group-hover:translate-x-0 transition-all"
+              strokeWidth={2.25}
+            />
+          </Link>
         ))}
         {hidden > 0 && (
           <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-foreground/[0.04] text-[10.5px] text-muted-foreground italic">
@@ -516,6 +539,54 @@ function ProjectListSection({ projectNos }: { projectNos: string[] }) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Heuristic: does this string look like one of the F&O project IDs
+ * we use as the `:projectId` route param? PRJ000002443, TRKTHL01305,
+ * TRKYTH00616 etc. — all-caps prefix (≥ 3 letters) + digit run
+ * (≥ 3 digits). Lets the detail panel turn project-number labels
+ * into deep links without threading viewMode through the props.
+ */
+function looksLikeProjectNo(value: string): boolean {
+  return /^[A-Z]{3,}\d{3,}$/.test(value.trim());
+}
+
+/**
+ * Inline chip-style link that takes a project number and routes to
+ * `/projects/:projectNo` (Vessel Projects with the project pre-
+ * selected). Used by the project list, the expense voucher table,
+ * and the L3 header sub-label so any projectNo the user sees in the
+ * detail panel is one click away from the operational detail page.
+ *
+ * `e.stopPropagation()` keeps the surrounding row's click handler
+ * (which would otherwise re-open or shuffle the detail panel) from
+ * firing when the user clicks the link itself.
+ */
+function ProjectNoLink({
+  projectNo,
+  className,
+}: {
+  projectNo: string;
+  className?: string;
+}) {
+  return (
+    <Link
+      to={`/projects/${projectNo}`}
+      onClick={(e) => e.stopPropagation()}
+      title={`${projectNo} projesini Vessel Projects'te aç`}
+      className={cn(
+        "group inline-flex items-center gap-1 font-mono tabular-nums hover:underline underline-offset-2 decoration-foreground/40 transition-colors hover:text-foreground",
+        className
+      )}
+    >
+      {projectNo}
+      <ArrowUpRight
+        className="size-3 opacity-0 -translate-x-0.5 group-hover:opacity-70 group-hover:translate-x-0 transition-all"
+        strokeWidth={2.25}
+      />
+    </Link>
   );
 }
 
