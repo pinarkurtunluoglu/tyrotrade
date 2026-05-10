@@ -12,6 +12,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Home01Icon,
   HotPriceIcon,
+  ChatEdit01Icon,
+  CubeIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -73,9 +75,16 @@ const NAV_GROUPS: NavGroup[] = [
 interface AppSidebarProps {
   embedded?: boolean;
   onItemClick?: () => void;
+  /** Opens the TYRO AI drawer. Mounted at ShellInner so the
+   *  drawer overlays the whole app regardless of route. */
+  onOpenAi?: () => void;
 }
 
-export function AppSidebar({ embedded = false, onItemClick }: AppSidebarProps) {
+export function AppSidebar({
+  embedded = false,
+  onItemClick,
+  onOpenAi,
+}: AppSidebarProps) {
   const { expanded, pinned, togglePin, theme } = useSidebar();
   const showLabels = embedded || expanded;
   const [mainGroup, systemGroup] = NAV_GROUPS;
@@ -174,6 +183,34 @@ export function AppSidebar({ embedded = false, onItemClick }: AppSidebarProps) {
               {systemGroup.label}
             </div>
           )}
+          {/* Sibling-app + AI shortcuts above the Yardım nav item.
+              They mirror the NavItemLink layout so they sit cleanly
+              in the Sistem group, with a small accent dot identifying
+              them as external/specialised tools. */}
+          {onOpenAi && (
+            <SidebarToolItem
+              kind="button"
+              icon={ChatEdit01Icon}
+              label="TYRO AI"
+              showLabel={showLabels}
+              tooltip="TYRO AI"
+              accentColor="#0d9488"
+              onClick={() => {
+                onOpenAi();
+                onItemClick?.();
+              }}
+            />
+          )}
+          <SidebarToolItem
+            kind="link"
+            href="https://tyrowms.github.io/"
+            icon={CubeIcon}
+            label="tyrostock"
+            showLabel={showLabels}
+            tooltip="tyrostock'u yeni sekmede aç"
+            accentColor="#8b5cf6"
+            onClick={onItemClick}
+          />
           <NavItemLink
             item={systemGroup.items[0]}
             showLabel={showLabels}
@@ -281,4 +318,89 @@ function NavItemLink({
     );
   }
   return inner;
+}
+
+/**
+ * Sibling-app / AI shortcut row — mirrors `NavItemLink`'s layout
+ * (same h-9 expanded row / h-10 w-10 collapsed icon-only) so the
+ * Sistem group reads as one rhythmic stack, but the icon carries a
+ * small accent dot to mark these as specialised tools rather than
+ * navigation. `kind="button"` triggers an in-app action (AI
+ * drawer); `kind="link"` opens an external URL in a new tab.
+ */
+function SidebarToolItem(
+  props: {
+    icon: import("@hugeicons/react").IconSvgElement;
+    label: string;
+    tooltip: string;
+    showLabel: boolean;
+    accentColor: string;
+    onClick?: () => void;
+  } & (
+    | { kind: "button" }
+    | { kind: "link"; href: string }
+  )
+) {
+  const { icon, label, tooltip, showLabel, accentColor, onClick } = props;
+
+  const innerContent = (
+    <>
+      <span className="relative shrink-0">
+        <HugeiconsIcon
+          icon={icon}
+          className={showLabel ? "size-4" : "size-[18px]"}
+          strokeWidth={2}
+        />
+        {/* Accent dot pinned to the icon's top-right corner — small
+            visual differentiator versus pure nav rows. */}
+        <span
+          aria-hidden
+          className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full"
+          style={{ backgroundColor: accentColor }}
+        />
+      </span>
+      {showLabel && <span className="truncate">{label}</span>}
+    </>
+  );
+
+  const sharedClassName = cn(
+    "group flex items-center rounded-xl text-[13px] font-medium transition-all relative shrink-0",
+    showLabel
+      ? "h-9 w-full pl-3 pr-3 gap-2.5"
+      : "h-10 w-10 justify-center px-0",
+    "text-[var(--sb-text-muted)] hover:text-[var(--sb-text)] hover:bg-[var(--sb-hover-bg)]"
+  );
+
+  const trigger =
+    props.kind === "button" ? (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        className={sharedClassName}
+      >
+        {innerContent}
+      </button>
+    ) : (
+      <a
+        href={props.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={onClick}
+        aria-label={label}
+        className={sharedClassName}
+      >
+        {innerContent}
+      </a>
+    );
+
+  if (!showLabel) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+        <TooltipContent side="right">{tooltip}</TooltipContent>
+      </Tooltip>
+    );
+  }
+  return trigger;
 }

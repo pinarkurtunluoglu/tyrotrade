@@ -6,8 +6,6 @@ import { Home01Icon, HotPriceIcon } from "@hugeicons/core-free-icons";
 import { GlassPanel } from "@/components/glass/GlassPanel";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { AskAiButton } from "@/components/dashboard/AskAiButton";
-import { TyroWmsButton } from "@/components/layout/TyroWmsButton";
 import { TyroChatButton } from "@/components/layout/TyroChatButton";
 import { NotificationButton } from "@/components/layout/NotificationButton";
 import { TyroAiDrawer } from "@/components/chat/TyroAiDrawer";
@@ -48,9 +46,15 @@ function ShellInner() {
     PAGE_TITLES[location.pathname] ||
     (location.pathname.startsWith("/projects") ? "Vessel Projects" : "tyrotrade");
 
+  // AI drawer state lifted to ShellInner — the trigger now lives in
+  // the sidebar (system group), but the drawer overlays the whole
+  // app so it has to mount up here.
+  const [aiOpen, setAiOpen] = React.useState(false);
+  const openAi = React.useCallback(() => setAiOpen(true), []);
+
   return (
     <div className="h-screen w-screen flex overflow-hidden">
-      {!isMobile && <DesktopSidebarSlot />}
+      {!isMobile && <DesktopSidebarSlot onOpenAi={openAi} />}
 
       {isMobile && (
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -60,7 +64,14 @@ function ShellInner() {
             aria-describedby={undefined}
           >
             <SheetTitle className="sr-only">Menu</SheetTitle>
-            <AppSidebar embedded onItemClick={() => setMobileOpen(false)} />
+            <AppSidebar
+              embedded
+              onItemClick={() => setMobileOpen(false)}
+              onOpenAi={() => {
+                openAi();
+                setMobileOpen(false);
+              }}
+            />
           </SheetContent>
         </Sheet>
       )}
@@ -72,6 +83,10 @@ function ShellInner() {
         </div>
       </main>
 
+      {/* AI drawer mounted at shell level so the sidebar trigger
+          opens an overlay that covers everything regardless of route. */}
+      <TyroAiDrawer open={aiOpen} onOpenChange={setAiOpen} />
+
       {/* Fires the post-login Dataverse refresh exactly once per browser
           session (sessionStorage flag). Renders nothing — toast is the
           only visible signal. */}
@@ -80,7 +95,7 @@ function ShellInner() {
   );
 }
 
-function DesktopSidebarSlot() {
+function DesktopSidebarSlot({ onOpenAi }: { onOpenAi: () => void }) {
   const { expanded, setHovering } = useSidebar();
   const closeTimer = React.useRef<number | null>(null);
 
@@ -112,7 +127,7 @@ function DesktopSidebarSlot() {
         expanded ? "w-[272px]" : "w-[92px]"
       )}
     >
-      <AppSidebar />
+      <AppSidebar onOpenAi={onOpenAi} />
     </div>
   );
 }
@@ -121,7 +136,6 @@ function TopBar({ title, pathname }: { title: string; pathname: string }) {
   const isMobile = useIsMobile();
   const { setMobileOpen } = useSidebar();
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
-  const [aiOpen, setAiOpen] = React.useState(false);
   const [chatOpen, setChatOpen] = React.useState(false);
 
   return (
@@ -157,11 +171,10 @@ function TopBar({ title, pathname }: { title: string; pathname: string }) {
               <Search />
             </Button>
             <NotificationButton />
-            <AskAiButton
-              className="hidden sm:inline-flex"
-              onClick={() => setAiOpen(true)}
-            />
-            <TyroWmsButton className="hidden sm:inline-flex" />
+            {/* TYRO AI + TYROSTOCK CTAs moved into the sidebar's
+                Sistem group (above Yardım). The chat trigger stays
+                here because it's a frequently-toggled inline action
+                rather than a sibling app. */}
             <TyroChatButton
               className="hidden sm:inline-flex"
               onClick={() => setChatOpen(true)}
@@ -170,7 +183,6 @@ function TopBar({ title, pathname }: { title: string; pathname: string }) {
         </GlassPanel>
       </div>
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
-      <TyroAiDrawer open={aiOpen} onOpenChange={setAiOpen} />
       <TyroChatDrawer open={chatOpen} onOpenChange={setChatOpen} />
     </>
   );
