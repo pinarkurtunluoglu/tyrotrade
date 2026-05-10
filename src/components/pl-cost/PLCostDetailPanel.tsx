@@ -1,5 +1,12 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Globe02Icon,
+  WorkflowSquare05Icon,
+  ShipmentTrackingIcon,
+  ReceiptDollarIcon,
+} from "@hugeicons/core-free-icons";
 import {
   formatCompactCurrency,
   formatCurrency,
@@ -13,21 +20,62 @@ interface PLCostDetailPanelProps {
   onClose: () => void;
 }
 
-const LEVEL_LABELS: Record<1 | 2 | 3 | 4, string> = {
-  1: "Segment",
-  2: "Voyage Status",
-  3: "Vessel / Proje",
-  4: "Gider Kalemi",
+const LEVEL_META: Record<
+  1 | 2 | 3 | 4,
+  {
+    label: string;
+    childLabel: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    icon: any;
+    accentBg: string;
+    accentRing: string;
+    accentText: string;
+  }
+> = {
+  1: {
+    label: "Segment",
+    childLabel: "Statü",
+    icon: Globe02Icon,
+    accentBg: "linear-gradient(135deg, #38bdf8, #0284c7)",
+    accentRing: "rgba(56,189,248,0.40)",
+    accentText: "rgb(7 89 133)",
+  },
+  2: {
+    label: "Statü",
+    childLabel: "Gemi / Proje",
+    icon: WorkflowSquare05Icon,
+    accentBg: "linear-gradient(135deg, #a78bfa, #7c3aed)",
+    accentRing: "rgba(167,139,250,0.40)",
+    accentText: "rgb(76 29 149)",
+  },
+  3: {
+    label: "Gemi / Proje",
+    childLabel: "Gider Kalemi",
+    icon: ShipmentTrackingIcon,
+    accentBg: "linear-gradient(135deg, #34d399, #059669)",
+    accentRing: "rgba(16,185,129,0.40)",
+    accentText: "rgb(6 95 70)",
+  },
+  4: {
+    label: "Gider Kalemi",
+    childLabel: "Voucher Satırı",
+    icon: ReceiptDollarIcon,
+    accentBg: "linear-gradient(135deg, #fbbf24, #d97706)",
+    accentRing: "rgba(245,158,11,0.40)",
+    accentText: "rgb(120 53 15)",
+  },
 };
 
 /**
  * Slide-in detay panel — bir tree node'una tıklayınca sağdan kayarak
- * açılır. İçinde:
- *   - Breadcrumb header (level label + node name + project count)
- *   - Variance gauge: büyük R/E % + sapma rakamı
- *   - 9-metrik full görünüm (table'daki mini-bar yerine sayılar
- *     daha net gösteriliyor)
- *   - L4 expense rows: ham voucher listesi (expense_num, USD)
+ * açılır. Bölüm sırası (üstten alta):
+ *   1. Gradient header (level icon + label + project count + close)
+ *   2. Variance gauge: büyük R/E % + Δ sapma + tahmini→gerçekleşen
+ *   3. Top Children breakdown (L1/L2/L3 — alt 3 düğüm, her biri için
+ *      R/E % + delta — segment/voyage-level click'ler için doyurucu)
+ *   4. 8-metrik full grid (table'daki mini-bar yerine tam sayılar)
+ *   5. L4 expense rows: ham voucher listesi (expense_num, USD)
+ *   6. L1-L3 için proje no listesi
  */
 export function PLCostDetailPanel({ node, onClose }: PLCostDetailPanelProps) {
   return (
@@ -48,7 +96,7 @@ export function PLCostDetailPanel({ node, onClose }: PLCostDetailPanelProps) {
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 320, damping: 32 }}
-            className="fixed right-3 top-3 bottom-3 z-40 w-[calc(100%-1.5rem)] md:w-[500px]"
+            className="fixed right-3 top-3 bottom-3 z-40 w-[calc(100%-1.5rem)] md:w-[520px]"
           >
             {/* Solid white surface — the GlassPanel's `tone="strong"` was
                 still translucent enough that the table behind bled
@@ -70,16 +118,26 @@ function Body({ node, onClose }: { node: PLCostNode; onClose: () => void }) {
   const onTarget =
     m.realizedExpectedPct != null && Math.abs(m.realizedExpectedPct - 100) <= 5;
   const tone = onTarget ? "neutral" : overBudget ? "danger" : "positive";
+  const meta = LEVEL_META[node.level];
 
   return (
     <>
-      {/* Header */}
-      <div className="px-4 py-3 flex items-start gap-2 border-b border-border/40 shrink-0">
+      {/* Header — level icon pill + label + close button */}
+      <div className="px-4 py-3 flex items-start gap-2.5 border-b border-border/40 shrink-0">
+        <span
+          className="size-10 rounded-xl grid place-items-center shrink-0 text-white shadow-sm"
+          style={{
+            background: meta.accentBg,
+            boxShadow: `0 4px 12px -4px ${meta.accentRing}, inset 0 1px 0 0 rgba(255,255,255,0.25)`,
+          }}
+        >
+          <HugeiconsIcon icon={meta.icon} size={18} strokeWidth={2} />
+        </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[10.5px] uppercase tracking-wider text-muted-foreground font-medium">
-            {LEVEL_LABELS[node.level]}
+          <div className="text-[10.5px] uppercase tracking-wider text-muted-foreground font-semibold">
+            {meta.label}
           </div>
-          <div className="text-[15px] font-bold tracking-tight leading-tight truncate mt-0.5">
+          <div className="text-[16px] font-bold tracking-tight leading-tight truncate mt-0.5">
             {node.label}
           </div>
           {node.subLabel && (
@@ -102,6 +160,14 @@ function Body({ node, onClose }: { node: PLCostNode; onClose: () => void }) {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Variance gauge */}
         <VarianceGauge metrics={m} tone={tone} />
+
+        {/* Top children breakdown — only when this node has children */}
+        {node.children && node.children.length > 0 && (
+          <TopChildrenSection
+            children={node.children}
+            childLabel={meta.childLabel}
+          />
+        )}
 
         {/* Full metrics grid */}
         <MetricGrid node={node} />
@@ -197,6 +263,95 @@ function VarianceGauge({
   );
 }
 
+/**
+ * Top-3 children breakdown by realizedUsd. Each row shows label,
+ * R/E % chip (tone-coloured), and delta. Helps user drill down into
+ * "which child is dragging the parent's variance" without expanding
+ * the tree.
+ */
+function TopChildrenSection({
+  children,
+  childLabel,
+}: {
+  children: PLCostNode[];
+  childLabel: string;
+}) {
+  // Sort by realizedUsd desc, take top 3
+  const top = [...children]
+    .sort((a, b) => b.metrics.realizedUsd - a.metrics.realizedUsd)
+    .slice(0, 3);
+  const remaining = children.length - top.length;
+  return (
+    <div>
+      <div className="text-[10.5px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5 px-1 flex items-center justify-between">
+        <span>En Büyük {childLabel} Kırılımı</span>
+        <span className="font-mono normal-case tracking-normal text-muted-foreground/70">
+          {top.length}/{children.length}
+        </span>
+      </div>
+      <div className="rounded-xl border border-border/30 overflow-hidden divide-y divide-border/20">
+        {top.map((child) => {
+          const m = child.metrics;
+          const overBudget = m.deltaUsd > 0;
+          const onTarget =
+            m.realizedExpectedPct != null &&
+            Math.abs(m.realizedExpectedPct - 100) <= 5;
+          const chipPalette = onTarget
+            ? { bg: "rgba(16,185,129,0.12)", text: "rgb(4 120 87)" }
+            : overBudget
+              ? { bg: "rgba(244,63,94,0.12)", text: "rgb(159 18 57)" }
+              : { bg: "rgba(245,158,11,0.14)", text: "rgb(180 83 9)" };
+          return (
+            <div
+              key={child.id}
+              className="px-3 py-2 flex items-center gap-2.5"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="text-[12.5px] font-semibold truncate">
+                  {child.label}
+                </div>
+                <div className="text-[10.5px] text-muted-foreground tabular-nums font-mono leading-tight mt-0.5">
+                  {formatCompactCurrency(m.expectedUsd, "USD")}
+                  {" → "}
+                  <span className="font-semibold text-foreground/80">
+                    {formatCompactCurrency(m.realizedUsd, "USD")}
+                  </span>
+                </div>
+              </div>
+              <div className="shrink-0 flex flex-col items-end gap-0.5">
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold tabular-nums"
+                  style={{
+                    backgroundColor: chipPalette.bg,
+                    color: chipPalette.text,
+                  }}
+                >
+                  {m.realizedExpectedPct == null
+                    ? "—"
+                    : `%${m.realizedExpectedPct.toFixed(0)}`}
+                </span>
+                <span
+                  className="text-[10.5px] font-bold tabular-nums"
+                  style={{ color: chipPalette.text }}
+                >
+                  {m.deltaUsd === 0
+                    ? "—"
+                    : `${overBudget ? "+" : "−"}${formatCompactCurrency(Math.abs(m.deltaUsd), "USD")}`}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+        {remaining > 0 && (
+          <div className="px-3 py-1.5 text-[10.5px] text-muted-foreground italic">
+            +{remaining} {childLabel.toLowerCase()} daha
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MetricGrid({ node }: { node: PLCostNode }) {
   const m = node.metrics;
   const items: Array<{ label: string; value: string; muted?: boolean }> = [
@@ -246,25 +401,30 @@ function MetricGrid({ node }: { node: PLCostNode }) {
     },
   ];
   return (
-    <div className="grid grid-cols-2 gap-2">
-      {items.map((it) => (
-        <div
-          key={it.label}
-          className="rounded-lg bg-foreground/[0.04] px-3 py-2"
-        >
-          <div className="text-[9.5px] uppercase tracking-wider text-muted-foreground/80 font-semibold">
-            {it.label}
-          </div>
+    <div>
+      <div className="text-[10.5px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5 px-1">
+        Tüm Metrikler
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {items.map((it) => (
           <div
-            className={cn(
-              "text-[13px] tabular-nums leading-tight mt-0.5",
-              it.muted ? "text-muted-foreground" : "font-semibold"
-            )}
+            key={it.label}
+            className="rounded-lg bg-foreground/[0.04] px-3 py-2"
           >
-            {it.value}
+            <div className="text-[9.5px] uppercase tracking-wider text-muted-foreground/80 font-semibold">
+              {it.label}
+            </div>
+            <div
+              className={cn(
+                "text-[13px] tabular-nums leading-tight mt-0.5",
+                it.muted ? "text-muted-foreground" : "font-semibold"
+              )}
+            >
+              {it.value}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }

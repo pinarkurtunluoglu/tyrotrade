@@ -9,19 +9,29 @@
  *   - "İhracat Bulk Navlun ortalama %18 sapıyor"
  *
  * Output is always opinion-bearing, not just numbers — the badge tone
- * + text together telegraph "ok / watch / problem" without forcing
+ * + icon together telegraph "ok / watch / problem" without forcing
  * the reader to mentally compare percentages.
+ *
+ * Each insight carries:
+ *   - `text`    : short chip label (≤ 80 chars)
+ *   - `tone`    : drives chip background + icon
+ *   - `tooltip` : richer hover explanation (2-3 sentences max)
+ *   - `targetNodeId` (when applicable): chip becomes clickable and
+ *     opens the corresponding detail panel
  */
 
 import type { PLCostNode } from "@/lib/selectors/plCost";
+import { formatCompactCurrency } from "@/lib/format";
 
 export type InsightTone = "positive" | "warning" | "danger" | "info";
 
 export interface PLCostInsight {
   /** Short, punchy callout text (≤ 80 chars). */
   text: string;
-  /** Tone drives chip background + emoji. */
+  /** Tone drives chip background + icon. */
   tone: InsightTone;
+  /** Hover tooltip explanation (richer than `text`). */
+  tooltip: string;
   /** When set, clicking the chip should scroll/highlight this node. */
   targetNodeId?: string;
 }
@@ -51,17 +61,35 @@ export function generateSmartInsights(tree: PLCostNode[]): PLCostInsight[] {
   };
   walk(tree);
 
-  // 1. Over-budget projects (> 120%)
-  const overBudgetCount = l3Nodes.filter(
-    (n) =>
-      n.metrics.realizedExpectedPct != null &&
-      n.metrics.realizedExpectedPct > OVER_BUDGET_PCT &&
-      n.metrics.expectedUsd > 0
-  ).length;
-  if (overBudgetCount > 0) {
+  // 1. Over-budget projects (> 120%) — chip points to the WORST offender
+  //    so clicking it doesn't dead-end. If there's exactly one, the
+  //    message degenerates to the project name.
+  const overBudget = l3Nodes
+    .filter(
+      (n) =>
+        n.metrics.realizedExpectedPct != null &&
+        n.metrics.realizedExpectedPct > OVER_BUDGET_PCT &&
+        n.metrics.expectedUsd > 0
+    )
+    .sort(
+      (a, b) =>
+        (b.metrics.realizedExpectedPct ?? 0) -
+        (a.metrics.realizedExpectedPct ?? 0)
+    );
+  if (overBudget.length > 0) {
+    const worst = overBudget[0];
+    const worstPct = worst.metrics.realizedExpectedPct?.toFixed(0) ?? "—";
     out.push({
-      text: `${overBudgetCount} proje %${OVER_BUDGET_PCT}+ üzerinde gerçekleşti — bütçe aşımı`,
+      text:
+        overBudget.length === 1
+          ? `${worst.label} %${worstPct} gerçekleşti — bütçe aşımı`
+          : `${overBudget.length} proje %${OVER_BUDGET_PCT}+ üzerinde — bütçe aşımı`,
       tone: "danger",
+      tooltip:
+        overBudget.length === 1
+          ? `${worst.label} projesinde gerçekleşen gider tahminin %${worstPct}'ine ulaştı — yani tahminin ${(parseInt(worstPct, 10) - 100).toFixed(0)}% üzerinde. Tıklayarak bu projenin detay panelini açabilir, kalem bazında hangi giderin patladığını görebilirsiniz.`
+          : `${overBudget.length} farklı projede gerçekleşen gider, tahmin edilen bütçenin %${OVER_BUDGET_PCT}'ini aştı. En kötü vakada %${worstPct} gerçekleşme var. Tıklayarak en yüksek sapan projeye gidin.`,
+      targetNodeId: worst.id,
     });
   }
 
@@ -82,11 +110,18 @@ export function generateSmartInsights(tree: PLCostNode[]): PLCostInsight[] {
     const pct = top.metrics.realizedExpectedPct
       ? `%${top.metrics.realizedExpectedPct.toFixed(0)}`
       : "—";
+    const deltaTxt = formatCompactCurrency(
+      Math.abs(top.metrics.deltaUsd),
+      "USD"
+    );
     out.push({
       text: overshoot
         ? `${top.label} en fazla bütçe aştı (${pct})`
         : `${top.label} bütçenin altında kaldı (${pct})`,
       tone: overshoot ? "warning" : "positive",
+      tooltip: overshoot
+        ? `${top.label} projesinde gerçekleşen gider, tahminin ${deltaTxt} üzerine çıktı (%${pct}). Hangi gider kaleminin sapmaya yol açtığını görmek için tıklayın.`
+        : `${top.label} projesinde gerçekleşen gider, tahminin ${deltaTxt} altında kaldı (%${pct}). Bu pozitif bir sapma — beklenenden tasarruflu bir proje. Detaya tıklayarak hangi kalemin daha az gerçekleştiğini görebilirsiniz.`,
       targetNodeId: top.id,
     });
   }
@@ -104,9 +139,11 @@ export function generateSmartInsights(tree: PLCostNode[]): PLCostInsight[] {
         (a.metrics.realizedExpectedPct ?? 0) -
         (b.metrics.realizedExpectedPct ?? 0)
     )[0];
+    const bestPct = best.metrics.realizedExpectedPct?.toFixed(0) ?? "—";
     out.push({
-      text: `${best.label} segmenti hedefin altında (%${best.metrics.realizedExpectedPct?.toFixed(0) ?? "—"})`,
+      text: `${best.label} segmenti hedefin altında (%${bestPct})`,
       tone: "positive",
+      tooltip: `${best.label} segmentindeki tüm projelerin gerçekleşen gider toplamı, tahmin toplamının %${bestPct}'i kadar — yani bütçenin %${(100 - parseInt(bestPct, 10)).toFixed(0)}'i altında kalıyor. Hangi statü/projelerin bu performansa katkı verdiğini görmek için tıklayın.`,
       targetNodeId: best.id,
     });
   }
@@ -116,9 +153,14 @@ export function generateSmartInsights(tree: PLCostNode[]): PLCostInsight[] {
     (a, b) => b.metrics.realizedUsd - a.metrics.realizedUsd
   )[0];
   if (heaviestSegment && heaviestSegment.metrics.realizedUsd > 0) {
+    const realisedTxt = formatCompactCurrency(
+      heaviestSegment.metrics.realizedUsd,
+      "USD"
+    );
     out.push({
       text: `${heaviestSegment.label} en büyük gerçekleşen segment (${heaviestSegment.rawProjectNos.length} proje)`,
       tone: "info",
+      tooltip: `${heaviestSegment.label} segmenti, gerçekleşen gider toplamında en büyük paya sahip: ${realisedTxt} (${heaviestSegment.rawProjectNos.length} proje). Bu segmentin tüm statü ve gemilerini detaylı görmek için tıklayın.`,
       targetNodeId: heaviestSegment.id,
     });
   }

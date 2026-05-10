@@ -2,7 +2,7 @@ import * as React from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { Menu, Ship, Database, Search, Settings } from "lucide-react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Home01Icon } from "@hugeicons/core-free-icons";
+import { Home01Icon, HotPriceIcon } from "@hugeicons/core-free-icons";
 import { GlassPanel } from "@/components/glass/GlassPanel";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -214,6 +214,16 @@ const PAGE_TITLE_CONFIGS: Array<{
       renderIcon: () => <Ship className="size-4" strokeWidth={2} />,
       label: "Vessel Projects",
       title: "Sefer Takibi",
+    },
+  },
+  {
+    match: (p) => p === "/pl-cost",
+    config: {
+      renderIcon: () => (
+        <HugeiconsIcon icon={HotPriceIcon} size={16} strokeWidth={2} />
+      ),
+      label: "P&L Cost",
+      title: "Tahmini × Gerçekleşen Maliyet",
     },
   },
   {
