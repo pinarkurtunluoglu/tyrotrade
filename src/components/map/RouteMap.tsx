@@ -17,7 +17,6 @@ import {
   Minus,
   Crosshair,
   CalendarClock,
-  ChevronDown,
   X,
   Check,
   Clock,
@@ -33,7 +32,7 @@ import along from "@turf/along";
 import bearing from "@turf/bearing";
 import { point } from "@turf/helpers";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowUp01Icon } from "@hugeicons/core-free-icons";
+import { ArrowUp01Icon, ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import type { Feature, LineString, Position } from "geojson";
 
 import { GlassPanel } from "@/components/glass/GlassPanel";
@@ -548,10 +547,16 @@ export function RouteMap({ project }: RouteMapProps) {
                 }}
               >
                 {timelineOpen ? (
-                  // Chevron-down on open = "tuck the strip away". More
+                  // Arrow-down on open = "tuck the strip away". More
                   // natural than an X close glyph for a panel that's
                   // always available — it's collapsing, not dismissing.
-                  <ChevronDown className="size-4" />
+                  // HugeIcons ArrowDown01 mirrors the ArrowUp01 used on
+                  // the symmetric "open" affordance elsewhere on the map.
+                  <HugeiconsIcon
+                    icon={ArrowDown01Icon}
+                    size={16}
+                    strokeWidth={2}
+                  />
                 ) : (
                   // CalendarClock = "open timeline". Reads as a date /
                   // schedule trigger, which is exactly what the strip
