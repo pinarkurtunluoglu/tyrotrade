@@ -67,8 +67,13 @@ interface AdvancedFilterProps {
    *  - `"accent"` (default) → live sidebar accent gradient (matches AskAi)
    *  - `"muted"` → cool medium-dark slate gradient (theme-neutral, calmer
    *    next to the AI button on the dashboard topbar). Active-count badge
-   *    keeps slate ink so it reads against the white pill. */
-  tone?: "accent" | "muted";
+   *    keeps slate ink so it reads against the white pill.
+   *  - `"ghost"` → white pill with accent-colored ink and an outer
+   *    drop shadow (no fill). Used on Trade Cost where the toolbar
+   *    already carries a coloured accent on neighbouring controls
+   *    and the filter should read as a quiet companion, not a
+   *    second CTA. */
+  tone?: "accent" | "muted" | "ghost";
   className?: string;
 }
 
@@ -261,6 +266,45 @@ export function AdvancedFilter({
                 style={{
                   background: MUTED_TONE.solid,
                   boxShadow: `inset 0 1px 0 0 rgba(255,255,255,0.20), 0 2px 6px -1px ${MUTED_TONE.ring}`,
+                }}
+              >
+                {activeCount}
+              </span>
+            )}
+          </button>
+        ) : tone === "ghost" ? (
+          // Ghost variant — white pill with accent-tinted ink and a
+          // layered outer drop shadow (no fill). Reads as a quiet
+          // companion on toolbars that already carry a louder accent
+          // element next to it.
+          <button
+            type="button"
+            aria-label="Gelişmiş filtre"
+            className={cn(
+              "h-9 rounded-full px-3.5 min-w-[110px] inline-flex items-center justify-center gap-2 shrink-0 relative transition-transform",
+              "text-[13px] font-semibold tracking-tight",
+              "hover:scale-[1.04] active:scale-95",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+              className
+            )}
+            style={{
+              background: "white",
+              color: accent.solid,
+              // Same 3-layer outer drop shadow we use on the
+              // RefreshButton white state — keeps Filtre + Refresh as
+              // visually identical "neutral white pill" siblings.
+              boxShadow:
+                "0 1px 2px 0 rgba(15,23,42,0.08), 0 4px 12px -4px rgba(15,23,42,0.18), inset 0 0 0 1px rgba(15,23,42,0.10)",
+            }}
+          >
+            <HugeiconsIcon icon={FilterIcon} size={16} strokeWidth={2} />
+            <span>Filtre</span>
+            {activeCount > 0 && (
+              <span
+                className="ml-0.5 h-5 min-w-5 px-1.5 inline-flex items-center justify-center rounded-full text-[10.5px] font-bold tabular-nums text-white"
+                style={{
+                  background: accent.solid,
+                  boxShadow: `0 2px 6px -1px ${accent.ring}`,
                 }}
               >
                 {activeCount}

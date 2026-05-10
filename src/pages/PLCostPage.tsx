@@ -232,6 +232,7 @@ export function PLCostPage() {
               filters={filters}
               onChange={setFilters}
               periodDefault="all"
+              tone="ghost"
             />
             <ViewModeToggle
               value={viewMode}
@@ -324,7 +325,10 @@ function ViewModeToggle({
       <div
         role="radiogroup"
         aria-label="Görünüm modu"
-        className="inline-flex items-center h-9 rounded-full bg-foreground/[0.06] ring-1 ring-foreground/10 p-1 gap-1"
+        // iOS-style segmented control: subtle gray track, active
+        // segment pops out as a white pill with a small lift shadow,
+        // inactive segment lets the track's gray show through.
+        className="inline-flex items-center h-9 rounded-full bg-slate-100 ring-1 ring-slate-200/70 p-1 gap-1"
       >
         <ToggleButton
           active={value === "project"}
@@ -374,10 +378,14 @@ function ToggleButton({
           aria-label={label}
           className="h-7 px-3 rounded-full text-[12.5px] font-semibold inline-flex items-center gap-1.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
           style={{
-            background: active ? accent.gradient : "transparent",
-            color: active ? "white" : "rgba(15,23,42,0.78)",
+            // Active = white pill that pops out of the gray track,
+            // inactive = transparent so the track shows. Active text
+            // gets the accent ink so the brand stays visible without
+            // flooding the button in colour.
+            background: active ? "white" : "transparent",
+            color: active ? accent.solid : "rgba(71, 85, 105, 0.85)",
             boxShadow: active
-              ? `0 3px 10px -3px ${accent.ring}, inset 0 1px 0 0 rgba(255,255,255,0.25)`
+              ? "0 1px 2px 0 rgba(15,23,42,0.10), 0 2px 6px -2px rgba(15,23,42,0.14), inset 0 1px 0 0 rgba(255,255,255,0.5)"
               : undefined,
             // Theme-driven focus ring so the outline matches sidebar accent
             // regardless of light/navy/black mode.
@@ -416,20 +424,20 @@ function RefreshButton({
   accent: ThemeAccent;
 }) {
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delayDuration={120}>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
             onClick={onClick}
             disabled={isFetching}
-            aria-label={isFetching ? "Hesaplama sürüyor" : "Verileri yenile"}
+            aria-label={isFetching ? "Hesaplama sürüyor" : "Yenile"}
             aria-busy={isFetching}
             aria-live="polite"
             className="size-9 rounded-full grid place-items-center shrink-0 shadow-sm transition-all hover:scale-[1.04] active:scale-95 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             style={{
               background: isFetching ? accent.gradient : "white",
-              color: isFetching ? "white" : "rgba(15,23,42,0.78)",
+              color: isFetching ? "white" : accent.solid,
               boxShadow: isFetching
                 ? `0 4px 12px -4px ${accent.ring}, inset 0 1px 0 0 rgba(255,255,255,0.25)`
                 : "0 1px 2px 0 rgba(15,23,42,0.08), 0 4px 12px -4px rgba(15,23,42,0.18), inset 0 0 0 1px rgba(15,23,42,0.10)",
@@ -446,11 +454,35 @@ function RefreshButton({
         </TooltipTrigger>
         <TooltipContent
           side="bottom"
-          className="bg-white text-foreground shadow-[0_12px_28px_-8px_rgba(15,23,42,0.24)] ring-1 ring-foreground/10 backdrop-blur-none"
+          sideOffset={8}
+          className="bg-white shadow-[0_12px_28px_-8px_rgba(15,23,42,0.24)] ring-1 ring-foreground/10 backdrop-blur-none px-3 py-1.5"
         >
-          {isFetching
-            ? "Hesaplama sürüyor…"
-            : "Trade Cost motorunu yeniden çalıştır"}
+          {/* Two-line tooltip: the headline is the verb the user
+              cares about ("Yenile"), the sub-line tells them what
+              actually happens — verbose enough to feel
+              informative on hover without crowding the icon at
+              rest. While fetching, the tooltip switches to a
+              status read-out. */}
+          {isFetching ? (
+            <div
+              className="text-[11.5px] font-bold uppercase tracking-wider"
+              style={{ color: accent.solid }}
+            >
+              Hesaplama sürüyor…
+            </div>
+          ) : (
+            <>
+              <div
+                className="text-[11.5px] font-bold uppercase tracking-wider"
+                style={{ color: accent.solid }}
+              >
+                Yenile
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">
+                Trade Cost motorunu yeniden çalıştır
+              </div>
+            </>
+          )}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
