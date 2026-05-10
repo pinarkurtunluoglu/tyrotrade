@@ -1,23 +1,19 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Coins02Icon,
-  ChartLineData01Icon,
+  ChartHistogramIcon,
   TargetIcon,
   TrendingDown,
   TrendingUp,
+  Alert02Icon,
 } from "@hugeicons/core-free-icons";
 import { GlassPanel } from "@/components/glass/GlassPanel";
 import { formatCompactCurrency } from "@/lib/format";
-import { useThemeAccent } from "@/components/layout/theme-accent";
 import type { PLCostMetrics } from "@/lib/selectors/plCost";
 
 interface PLCostKpiTilesProps {
   rootMetrics: PLCostMetrics;
-  /** Total contributing project count for the subtitle of the
-   *  "Toplam Tahmini" tile. */
   totalProjects: number;
-  /** Single biggest variance row (largest |deltaUsd|) for the
-   *  "En Sapan" tile. Caller computes from the tree. */
   topVariance?: {
     label: string;
     deltaUsd: number;
@@ -25,44 +21,81 @@ interface PLCostKpiTilesProps {
   };
 }
 
+/** Per-tile gradient palette — keeps each KPI distinguishable at a
+ *  glance. Gradients mirror the AdvancedFilter trigger style (white
+ *  stroke icon over a tone'd gradient pill). */
+type Tone = "slate" | "emerald" | "sky" | "rose" | "amber";
+
+const TONE_PALETTE: Record<
+  Tone,
+  { gradient: string; ring: string }
+> = {
+  slate: {
+    gradient: "linear-gradient(135deg, #94a3b8, #64748b)",
+    ring: "rgba(100,116,139,0.35)",
+  },
+  emerald: {
+    gradient: "linear-gradient(135deg, #34d399, #059669)",
+    ring: "rgba(16,185,129,0.40)",
+  },
+  sky: {
+    gradient: "linear-gradient(135deg, #38bdf8, #0284c7)",
+    ring: "rgba(56,189,248,0.40)",
+  },
+  rose: {
+    gradient: "linear-gradient(135deg, #fb7185, #e11d48)",
+    ring: "rgba(244,63,94,0.40)",
+  },
+  amber: {
+    gradient: "linear-gradient(135deg, #fbbf24, #d97706)",
+    ring: "rgba(245,158,11,0.40)",
+  },
+};
+
 /**
- * Five-up KPI tile bar — the visual anchor at the top of the P&L
- * Cost page. Numbers use AnimatedNumber-style compact formatting so
- * the tile width stays predictable across $1M / $100M scales.
+ * Five-up KPI tile bar — every tile carries its own coloured gradient
+ * pill icon (white stroke glyph over a tone-coloured gradient bg)
+ * mirroring the filter-trigger language. Tones are KPI-specific:
+ *
+ *   1. Toplam Tahmini    — slate (neutral baseline)
+ *   2. Toplam Gerçekleşen — sky (the headline number)
+ *   3. Gerçekleşme %     — emerald / amber / rose (tone-aware)
+ *   4. Δ Sapma           — emerald (under) / rose (over)
+ *   5. En Sapan          — amber (always — attention-callout)
  */
 export function PLCostKpiTiles({
   rootMetrics,
   totalProjects,
   topVariance,
 }: PLCostKpiTilesProps) {
-  const accent = useThemeAccent();
   const overBudget = rootMetrics.deltaUsd > 0;
   const onTarget =
     rootMetrics.realizedExpectedPct != null &&
     Math.abs(rootMetrics.realizedExpectedPct - 100) <= 5;
+  const tonePctLabel: Tone = onTarget
+    ? "emerald"
+    : overBudget
+      ? "rose"
+      : "amber";
+  const toneDelta: Tone = overBudget ? "rose" : "emerald";
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-      {/* 1. Toplam Tahmini */}
       <Tile
         label="Toplam Tahmini"
         value={formatCompactCurrency(rootMetrics.expectedUsd, "USD")}
         sub={`${totalProjects} proje`}
         icon={Coins02Icon}
-        iconBg="rgba(100,116,139,0.14)"
-        iconColor="rgb(71 85 105)"
+        tone="slate"
       />
-      {/* 2. Toplam Gerçekleşen */}
       <Tile
         label="Toplam Gerçekleşen"
         value={formatCompactCurrency(rootMetrics.realizedUsd, "USD")}
         sub="rollup'tan toplam"
-        icon={ChartLineData01Icon}
-        iconBg={accent.tint}
-        iconColor={accent.solid}
+        icon={ChartHistogramIcon}
+        tone="sky"
         valueBold
       />
-      {/* 3. Gerçekleşme % */}
       <Tile
         label="Gerçekleşme"
         value={
@@ -72,22 +105,8 @@ export function PLCostKpiTiles({
         }
         sub={onTarget ? "hedefte" : overBudget ? "bütçe aşıldı" : "altında"}
         icon={TargetIcon}
-        iconBg={
-          onTarget
-            ? "rgba(16,185,129,0.14)"
-            : overBudget
-              ? "rgba(244,63,94,0.14)"
-              : "rgba(245,158,11,0.14)"
-        }
-        iconColor={
-          onTarget
-            ? "rgb(4 120 87)"
-            : overBudget
-              ? "rgb(159 18 57)"
-              : "rgb(180 83 9)"
-        }
+        tone={tonePctLabel}
       />
-      {/* 4. Δ Sapma */}
       <Tile
         label="Δ Sapma"
         value={
@@ -97,13 +116,9 @@ export function PLCostKpiTiles({
         }
         sub={overBudget ? "bütçe üstü" : "bütçe altı"}
         icon={overBudget ? TrendingUp : TrendingDown}
-        iconBg={
-          overBudget ? "rgba(244,63,94,0.14)" : "rgba(16,185,129,0.14)"
-        }
-        iconColor={overBudget ? "rgb(159 18 57)" : "rgb(4 120 87)"}
+        tone={toneDelta}
         valueBold
       />
-      {/* 5. En Sapan */}
       <Tile
         label="En Sapan"
         value={
@@ -112,9 +127,8 @@ export function PLCostKpiTiles({
             : "—"
         }
         sub={topVariance ? topVariance.label : "veri yok"}
-        icon={topVariance && topVariance.deltaUsd > 0 ? TrendingUp : TrendingDown}
-        iconBg="rgba(245,158,11,0.14)"
-        iconColor="rgb(180 83 9)"
+        icon={Alert02Icon}
+        tone="amber"
       />
     </div>
   );
@@ -125,8 +139,7 @@ function Tile({
   value,
   sub,
   icon,
-  iconBg,
-  iconColor,
+  tone,
   valueBold,
 }: {
   label: string;
@@ -134,16 +147,19 @@ function Tile({
   sub: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   icon: any;
-  iconBg: string;
-  iconColor: string;
+  tone: Tone;
   valueBold?: boolean;
 }) {
+  const palette = TONE_PALETTE[tone];
   return (
     <GlassPanel tone="subtle" className="rounded-xl">
       <div className="px-4 py-3 flex items-start gap-3">
         <span
-          className="size-9 rounded-xl grid place-items-center shrink-0"
-          style={{ backgroundColor: iconBg, color: iconColor }}
+          className="size-10 rounded-xl grid place-items-center shrink-0 text-white shadow-sm"
+          style={{
+            background: palette.gradient,
+            boxShadow: `0 4px 12px -4px ${palette.ring}, inset 0 1px 0 0 rgba(255,255,255,0.25)`,
+          }}
         >
           <HugeiconsIcon icon={icon} size={18} strokeWidth={2} />
         </span>
@@ -153,7 +169,7 @@ function Tile({
           </div>
           <div
             className={`mt-0.5 tabular-nums leading-tight truncate ${
-              valueBold ? "text-[18px] font-bold" : "text-[18px] font-semibold"
+              valueBold ? "text-[19px] font-bold" : "text-[18px] font-semibold"
             }`}
           >
             {value}

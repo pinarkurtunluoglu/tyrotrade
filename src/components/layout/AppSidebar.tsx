@@ -10,8 +10,8 @@ import {
 } from "lucide-react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  DashboardSpeed01Icon,
   Home01Icon,
+  HotPriceIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -36,11 +36,7 @@ function HomeLineIcon({ className }: { className?: string }) {
 
 function PLCostIcon({ className }: { className?: string }) {
   return (
-    <HugeiconsIcon
-      icon={DashboardSpeed01Icon}
-      className={className}
-      strokeWidth={2}
-    />
+    <HugeiconsIcon icon={HotPriceIcon} className={className} strokeWidth={2} />
   );
 }
 

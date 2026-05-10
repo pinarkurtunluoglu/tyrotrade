@@ -4,6 +4,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   DashboardSpeed01Icon,
   Database01Icon,
+  HotPriceIcon,
   RefreshIcon,
   ShipmentTrackingIcon,
   ProjectorIcon,
@@ -138,61 +139,29 @@ export function PLCostPage() {
 
   return (
     <div className="h-full flex flex-col gap-3 min-h-0">
-      {/* ─── Toolbar ─── */}
+      {/* ─── Header (sadece title) ─── */}
       <GlassPanel tone="strong" className="rounded-2xl shrink-0">
-        <div className="px-4 py-3 flex items-center gap-3 flex-wrap">
-          {/* Sol: gradient pill + başlık */}
+        <div className="px-4 py-3 flex items-center gap-3">
           <span
-            className="size-10 rounded-xl grid place-items-center shrink-0 text-white shadow-sm"
+            className="size-11 rounded-2xl grid place-items-center shrink-0 text-white shadow-sm"
             style={{
               background: accent.gradient,
-              boxShadow: `0 4px 12px -4px ${accent.ring}, inset 0 1px 0 0 rgba(255,255,255,0.25)`,
+              boxShadow: `0 4px 14px -4px ${accent.ring}, inset 0 1px 0 0 rgba(255,255,255,0.28)`,
             }}
           >
-            <HugeiconsIcon
-              icon={DashboardSpeed01Icon}
-              size={20}
-              strokeWidth={2}
-            />
+            <HugeiconsIcon icon={HotPriceIcon} size={22} strokeWidth={2} />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-[16px] font-bold tracking-tight leading-tight">
+            <div className="text-[18px] font-bold tracking-tight leading-tight">
               P&amp;L Cost
             </div>
-            <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5">
+            <div className="text-[12px] text-muted-foreground leading-tight mt-0.5">
               Tahmini × Gerçekleşen Maliyet
               {totalProjects > 0 && ` · ${totalProjects} proje`}
               {rollup.fetchedAt && (
                 <> · son hesap {formatDate(rollup.fetchedAt)}</>
               )}
             </div>
-          </div>
-          {/* Sağ: filter + view mode + manual refresh */}
-          <div className="flex items-center gap-2 shrink-0">
-            <AdvancedFilter
-              projects={rawProjects}
-              filters={filters}
-              onChange={setFilters}
-            />
-            <ViewModeToggle value={viewMode} onChange={setViewMode} />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={rollup.refresh}
-              disabled={rollup.isFetching}
-              className="gap-1.5"
-            >
-              {rollup.isFetching ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <HugeiconsIcon
-                  icon={RefreshIcon}
-                  size={14}
-                  strokeWidth={2}
-                />
-              )}
-              {rollup.isFetching ? "Hesaplanıyor..." : "Yenile"}
-            </Button>
           </div>
         </div>
       </GlassPanel>
@@ -211,10 +180,45 @@ export function PLCostPage() {
         <EmptyState accentColor={accent.solid} accentRing={accent.ring} accentGradient={accent.gradient} />
       ) : (
         <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
-          <PLCostInsightsRibbon
-            insights={insights}
-            onSelectNode={setSelectedNodeId}
-          />
+          {/* Insights + controls bar — chips solda, küçük dikey
+              ayraçlarla ayrılmış controls grubu sağda. Tek bara
+              yerleştirildi ki "P&L Cost" header'ı sade başlık olarak
+              kalsın, ikincil her şey buraya odaklansın. */}
+          <GlassPanel tone="subtle" className="rounded-xl shrink-0">
+            <div className="px-3.5 py-2.5 flex items-center gap-3">
+              <PLCostInsightsRibbon
+                insights={insights}
+                onSelectNode={setSelectedNodeId}
+              />
+              <span className="h-6 w-px bg-border/60 shrink-0" />
+              <div className="flex items-center gap-2 shrink-0">
+                <AdvancedFilter
+                  projects={rawProjects}
+                  filters={filters}
+                  onChange={setFilters}
+                />
+                <ViewModeToggle value={viewMode} onChange={setViewMode} />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={rollup.refresh}
+                  disabled={rollup.isFetching}
+                  className="gap-1.5"
+                >
+                  {rollup.isFetching ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <HugeiconsIcon
+                      icon={RefreshIcon}
+                      size={14}
+                      strokeWidth={2}
+                    />
+                  )}
+                  {rollup.isFetching ? "Hesaplanıyor..." : "Yenile"}
+                </Button>
+              </div>
+            </div>
+          </GlassPanel>
           <PLCostKpiTiles
             rootMetrics={rootMetrics}
             totalProjects={totalProjects}

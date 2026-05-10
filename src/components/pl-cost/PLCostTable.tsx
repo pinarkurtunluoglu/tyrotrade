@@ -1,5 +1,12 @@
 import * as React from "react";
-import { ChevronRight, Anchor } from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Globe02Icon,
+  WorkflowSquare05Icon,
+  ShipmentTrackingIcon,
+  ReceiptDollarIcon,
+} from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import { formatCompactCurrency, formatNumber } from "@/lib/format";
 import { useThemeAccent } from "@/components/layout/theme-accent";
@@ -76,7 +83,7 @@ export function PLCostTable({
                 className="sticky left-0 z-30 bg-foreground/[0.06] backdrop-blur-md px-3 py-2.5 text-left font-semibold text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border/40 min-w-[280px]"
                 style={{ minWidth: 280 }}
               >
-                Segment / Voyage / Proje / Kalem
+                Segment / Statü / Proje / Kalem
               </th>
               <Th>Tahmini USD</Th>
               <Th>Gerçekleşen USD</Th>
@@ -140,20 +147,43 @@ function Row({
 }) {
   const accent = useThemeAccent();
   const hasChildren = !!node.children && node.children.length > 0;
-  const indent = (node.level - 1) * 16;
+  const indent = (node.level - 1) * 18;
 
-  // Level-specific row styling — give the eye a sense of depth
-  // without spelling out the level number.
+  // Level-specific row styling — give the eye a clear sense of depth
+  // via font weight + size + a subtle bg shade per level. Each level
+  // also has its own glyph rendered next to the label so the user
+  // can tell "I'm looking at a segment vs. a status vs. a project"
+  // at a glance even without inspecting the indent.
   const levelClass = (() => {
     switch (node.level) {
       case 1:
-        return "font-semibold text-[13px] bg-foreground/[0.03]";
+        return "font-bold text-[14px] bg-foreground/[0.05]";
       case 2:
-        return "font-medium text-[12.5px]";
+        return "font-semibold text-[13px] bg-foreground/[0.025]";
       case 3:
-        return "text-[12.5px]";
+        return "font-medium text-[12.5px]";
       case 4:
-        return "text-[11.5px] text-foreground/85";
+        return "text-[12px] text-foreground/85";
+    }
+  })();
+
+  // Level glyph + tone — a small but explicit visual cue per level.
+  const levelIcon = (() => {
+    switch (node.level) {
+      case 1:
+        return { icon: Globe02Icon, color: accent.solid };
+      case 2:
+        return { icon: WorkflowSquare05Icon, color: "rgb(2 132 199)" };
+      case 3:
+        return {
+          icon: ShipmentTrackingIcon,
+          color: "rgb(71 85 105)",
+        };
+      case 4:
+        return {
+          icon: ReceiptDollarIcon,
+          color: "rgb(148 163 184)",
+        };
     }
   })();
 
@@ -211,12 +241,17 @@ function Row({
           ) : (
             <span className="size-5 shrink-0" aria-hidden />
           )}
-          {node.level === 3 && (
-            <Anchor
-              className="size-3.5 shrink-0 text-muted-foreground"
-              aria-hidden
+          <span
+            className="shrink-0 grid place-items-center"
+            style={{ color: levelIcon.color }}
+            aria-hidden
+          >
+            <HugeiconsIcon
+              icon={levelIcon.icon}
+              size={node.level === 1 ? 16 : node.level === 2 ? 15 : 14}
+              strokeWidth={2}
             />
-          )}
+          </span>
           <div className="min-w-0 flex-1">
             <div className="truncate">{node.label}</div>
             {node.subLabel && (

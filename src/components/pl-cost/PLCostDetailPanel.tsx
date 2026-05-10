@@ -1,6 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
-import { GlassPanel } from "@/components/glass/GlassPanel";
 import {
   formatCompactCurrency,
   formatCurrency,
@@ -49,14 +48,15 @@ export function PLCostDetailPanel({ node, onClose }: PLCostDetailPanelProps) {
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 320, damping: 32 }}
-            className="fixed right-0 top-0 bottom-0 z-40 w-full md:w-[480px] p-3"
+            className="fixed right-3 top-3 bottom-3 z-40 w-[calc(100%-1.5rem)] md:w-[500px]"
           >
-            <GlassPanel
-              tone="strong"
-              className="rounded-2xl h-full flex flex-col"
-            >
+            {/* Solid white surface — the GlassPanel's `tone="strong"` was
+                still translucent enough that the table behind bled
+                through. Detail mode is a focus-mode; readability beats
+                glass effect here. */}
+            <div className="rounded-3xl h-full flex flex-col bg-white shadow-[0_24px_64px_-16px_rgba(15,23,42,0.32)] ring-1 ring-foreground/8 overflow-hidden">
               <Body node={node} onClose={onClose} />
-            </GlassPanel>
+            </div>
           </motion.aside>
         </>
       )}
