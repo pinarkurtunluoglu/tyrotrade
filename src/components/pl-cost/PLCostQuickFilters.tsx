@@ -7,6 +7,11 @@ import { useThemeAccent } from "@/components/layout/theme-accent";
 import type { Project } from "@/lib/dataverse/entities";
 import type { ProjectFilterState } from "@/lib/filters/projectFilters";
 
+/** Auto-incrementing ID seed so each Combo gets a stable
+ *  `aria-labelledby` link from its trigger to its small visible
+ *  label. Avoids running React's useId hook six times. */
+let comboLabelCounter = 0;
+
 interface PLCostQuickFiltersProps {
   /** Domain project list (unfiltered) — used as the source for
    *  building distinct option lists for each combobox. */
@@ -76,7 +81,11 @@ export function PLCostQuickFilters({
   }, [projects]);
 
   return (
-    <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1">
+    <div
+      role="group"
+      aria-label="Hızlı filtreler"
+      className="flex items-end gap-2.5 flex-wrap min-w-0 flex-1"
+    >
       <Combo
         label="Segment"
         options={options.segments}
@@ -133,9 +142,23 @@ function normalizeLabel(o: MultiSelectOption): string {
   return typeof o === "string" ? o : o.label;
 }
 
-/** Compact wrapper that renders a small uppercase label above the
- *  combobox trigger so the user can tell at a glance which filter
- *  each chip controls without opening it. */
+/**
+ * Compact wrapper that renders a small uppercase label above the
+ * combobox trigger so the user can tell at a glance which filter
+ * each chip controls without opening it.
+ *
+ * Best-practice details:
+ *   - Stable id on the label + `aria-labelledby` on the trigger so
+ *     screen readers announce "Segment combobox, no selection" etc.
+ *   - Label uses `leading-none` and a fixed 4 px gap below so the
+ *     label baseline + trigger top are visually predictable.
+ *   - Tight min-width (132 px) lets 6 columns fit comfortably on a
+ *     1280 px viewport without wrap.
+ *   - Label colour shifts to accent.solid when a selection is
+ *     active — instant visual feedback that the column is "doing
+ *     something" without needing to read the chip inside the
+ *     trigger.
+ */
 function Combo({
   label,
   options,
@@ -151,13 +174,22 @@ function Combo({
   accent: { solid: string; ring: string; tint: string };
   searchPlaceholder: string;
 }) {
+  // Stable id for aria-labelledby linkage. useRef instead of useId
+  // because the global counter is enough and we never want this id
+  // to change across renders.
+  const idRef = React.useRef<string>("");
+  if (!idRef.current) {
+    comboLabelCounter += 1;
+    idRef.current = `plcost-combo-label-${comboLabelCounter}`;
+  }
   const hasSelection = selected.size > 0;
   return (
-    <div className="flex flex-col gap-1 min-w-[140px] max-w-[200px]">
+    <div className="flex flex-col min-w-[132px] max-w-[180px]">
       <span
-        className="text-[10.5px] font-bold uppercase tracking-wider px-0.5 transition-colors"
+        id={idRef.current}
+        className="text-[10.5px] font-bold uppercase tracking-wider leading-none mb-1.5 px-0.5 transition-colors"
         style={{
-          color: hasSelection ? accent.solid : "rgba(15, 23, 42, 0.72)",
+          color: hasSelection ? accent.solid : "rgba(15, 23, 42, 0.78)",
         }}
       >
         {label}
@@ -170,6 +202,7 @@ function Combo({
         placeholder="Hepsi"
         searchPlaceholder={searchPlaceholder}
         triggerClassName="text-[12.5px]"
+        triggerAriaLabelledBy={idRef.current}
         compact
       />
     </div>

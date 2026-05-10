@@ -49,6 +49,11 @@ interface MultiSelectComboboxProps {
    *  + numeric overflow pill instead of stacking selected items down.
    *  Default false (legacy wrap-and-grow behaviour). */
   compact?: boolean;
+  /** Optional element id whose text should be the trigger's
+   *  accessible name. Used by quick-filter columns whose visible
+   *  label sits ABOVE the trigger so screen readers announce e.g.
+   *  "Segment, combobox, no selection". */
+  triggerAriaLabelledBy?: string;
 }
 
 function normalizeOption(o: MultiSelectOption): {
@@ -81,6 +86,7 @@ export function MultiSelectCombobox({
   triggerClassName,
   maxListHeight = 240,
   compact = false,
+  triggerAriaLabelledBy,
 }: MultiSelectComboboxProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -118,6 +124,7 @@ export function MultiSelectCombobox({
             type="button"
             aria-haspopup="listbox"
             aria-expanded={open}
+            aria-labelledby={triggerAriaLabelledBy}
             className={cn(
               // Bigger trigger surface — was min-h-9 + 12px text + tight
               // px-2.5/py-1.5. Bumped to min-h-10 + 13.5px + px-3/py-2

@@ -193,16 +193,41 @@ export function PLCostPage() {
 
   return (
     <div className="h-full flex flex-col gap-3 min-h-0">
-      {/* ─── Quick filters + global controls ─── */}
-      <GlassPanel tone="strong" className="rounded-2xl shrink-0">
-        <div className="px-3.5 py-2.5 flex items-end gap-3 flex-wrap">
+      {/* ─── Quick filters + global controls ───
+            Toolbar best-practice layout:
+              - All interactive controls are 36 px (h-9) tall so bottoms
+                line up on a single baseline (items-end).
+              - Labelled filter columns on the left form a uniform grid
+                of [10.5 px UPPERCASE LABEL] / [h-9 trigger].
+              - Right cluster is icon-only by design: action buttons
+                don't need top labels because the icon + tooltip pair
+                already provides discoverability. This left/right
+                asymmetry is the affordance ("data" vs "actions").
+              - A subtle vertical divider lives between the two groups,
+                spanning only the trigger row (h-9, not the full column
+                height) so it doesn't visually overpower the labels.
+              - Toolbar wrapper padding (px-4 py-3) gives every control
+                breathing room without bloating vertical real estate. */}
+      <GlassPanel
+        tone="strong"
+        className="rounded-2xl shrink-0"
+        aria-label="Trade Cost araç çubuğu"
+      >
+        <div className="px-4 py-3 flex items-end gap-3 flex-wrap">
           <PLCostQuickFilters
             projects={rawProjects}
             filters={filters}
             onChange={setFilters}
           />
-          <span className="h-9 w-px bg-border/60 shrink-0 self-end mb-px" />
-          <div className="flex items-end gap-2 shrink-0">
+          <span
+            aria-hidden
+            className="h-9 w-px bg-foreground/10 shrink-0 self-end"
+          />
+          <div
+            role="toolbar"
+            aria-label="Trade Cost eylem kümesi"
+            className="flex items-end gap-2.5 shrink-0"
+          >
             <AdvancedFilter
               projects={rawProjects}
               filters={filters}
@@ -293,7 +318,11 @@ function ViewModeToggle({
 }) {
   return (
     <TooltipProvider delayDuration={250}>
-      <div className="inline-flex items-center h-9 rounded-full bg-foreground/[0.06] ring-1 ring-foreground/10 p-1 gap-1">
+      <div
+        role="radiogroup"
+        aria-label="Görünüm modu"
+        className="inline-flex items-center h-9 rounded-full bg-foreground/[0.06] ring-1 ring-foreground/10 p-1 gap-1"
+      >
         <ToggleButton
           active={value === "project"}
           onClick={() => onChange("project")}
@@ -336,16 +365,20 @@ function ToggleButton({
       <TooltipTrigger asChild>
         <button
           type="button"
+          role="radio"
           onClick={onClick}
-          aria-pressed={active}
+          aria-checked={active}
           aria-label={label}
-          className="h-7 px-3 rounded-full text-[12.5px] font-semibold inline-flex items-center gap-1.5 transition-all"
+          className="h-7 px-3 rounded-full text-[12.5px] font-semibold inline-flex items-center gap-1.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
           style={{
             background: active ? accent.gradient : "transparent",
-            color: active ? "white" : "rgba(15,23,42,0.7)",
+            color: active ? "white" : "rgba(15,23,42,0.78)",
             boxShadow: active
               ? `0 3px 10px -3px ${accent.ring}, inset 0 1px 0 0 rgba(255,255,255,0.25)`
               : undefined,
+            // Theme-driven focus ring so the outline matches sidebar accent
+            // regardless of light/navy/black mode.
+            ["--tw-ring-color" as never]: accent.ring,
           }}
         >
           <HugeiconsIcon icon={icon} size={15} strokeWidth={2} />
@@ -388,13 +421,16 @@ function RefreshButton({
             onClick={onClick}
             disabled={isFetching}
             aria-label={isFetching ? "Hesaplama sürüyor" : "Verileri yenile"}
-            className="size-9 rounded-full grid place-items-center shrink-0 shadow-sm transition-all hover:scale-[1.04] active:scale-95 disabled:cursor-not-allowed"
+            aria-busy={isFetching}
+            aria-live="polite"
+            className="size-9 rounded-full grid place-items-center shrink-0 shadow-sm transition-all hover:scale-[1.04] active:scale-95 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             style={{
               background: isFetching ? accent.gradient : "white",
               color: isFetching ? "white" : "rgba(15,23,42,0.78)",
               boxShadow: isFetching
                 ? `0 4px 12px -4px ${accent.ring}, inset 0 1px 0 0 rgba(255,255,255,0.25)`
                 : "0 1px 2px 0 rgba(15,23,42,0.08), 0 4px 12px -4px rgba(15,23,42,0.18), inset 0 0 0 1px rgba(15,23,42,0.10)",
+              ["--tw-ring-color" as never]: accent.ring,
             }}
           >
             <HugeiconsIcon
