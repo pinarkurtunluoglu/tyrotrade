@@ -131,7 +131,7 @@ export function PLCostPage() {
     if (rollup.isFetching && !wasFetchingRef.current) {
       // Just started — open a sticky loading toast.
       refreshToastIdRef.current = toast.loading(
-        "P&L hesaplama motoru çalıştırılıyor",
+        "Trade Cost hesaplama motoru çalıştırılıyor",
         {
           description:
             "5 aşamalı zincirleme analiz çalışıyor — birkaç dakika sürebilir.",
@@ -149,7 +149,7 @@ export function PLCostPage() {
           duration: 8000,
         });
       } else {
-        toast.success("P&L verileri güncellendi", {
+        toast.success("Trade Cost verileri güncellendi", {
           id: id ?? undefined,
           description: `${rollup.rows.length.toLocaleString("tr-TR")} özet satırı hazırlandı.`,
           duration: 4000,
@@ -406,7 +406,7 @@ function RefreshButton({
         >
           {isFetching
             ? "Hesaplama sürüyor…"
-            : "P&L motorunu yeniden çalıştır"}
+            : "Trade Cost motorunu yeniden çalıştır"}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

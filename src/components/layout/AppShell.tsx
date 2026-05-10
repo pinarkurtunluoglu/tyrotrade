@@ -222,7 +222,7 @@ const PAGE_TITLE_CONFIGS: Array<{
       renderIcon: () => (
         <HugeiconsIcon icon={HotPriceIcon} size={16} strokeWidth={2} />
       ),
-      label: "P&L Cost",
+      label: "Trade Cost",
       title: "Tahmini × Gerçekleşen Maliyet",
     },
   },

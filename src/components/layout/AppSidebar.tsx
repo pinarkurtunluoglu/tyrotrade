@@ -57,7 +57,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/", label: "Dashboard", icon: HomeLineIcon },
       { to: "/projects", label: "Vessel Projects", icon: Ship },
-      { to: "/pl-cost", label: "P&L Cost", icon: PLCostIcon },
+      { to: "/pl-cost", label: "Trade Cost", icon: PLCostIcon },
       { to: "/data", label: "Data Management", icon: Database },
     ],
   },
