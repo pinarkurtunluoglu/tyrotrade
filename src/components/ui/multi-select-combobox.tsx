@@ -128,22 +128,22 @@ export function MultiSelectCombobox({
             className={cn(
               // Bigger trigger surface — was min-h-9 + 12px text + tight
               // px-2.5/py-1.5. Bumped to min-h-10 + 13.5px + px-3/py-2
-              // so labels read clearly and chips inside breathe; keeps
-              // the same rounded shape so the popover still anchors
-              // cleanly. Solid white background (was 80% translucent)
-              // so the border and chips read as a crisp form field
-              // rather than a faint ghost.
+              // so labels read clearly and chips inside breathe.
+              // Solid white background (was 80% translucent) so the
+              // border and chips read as a crisp form field rather
+              // than a faint ghost.
               //
-              // Compact mode (Trade Cost quick filters): single-line
-              // fixed height, no wrap — multiple selections collapse
-              // into a count badge instead of stacking down.
-              "w-full rounded-lg border bg-white text-left text-[13.5px] leading-tight",
+              // Compact mode (Trade Cost quick filters): h-9
+              // rounded-full single-line trigger that mirrors the
+              // Filtre / Refresh sibling buttons on the right side
+              // of the same toolbar — full symmetry across the row.
+              "w-full border bg-white text-left text-[13.5px] leading-tight",
               "flex items-center gap-1.5",
               "transition-colors hover:bg-foreground/[0.02]",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               compact
-                ? "h-9 px-2.5 py-1 flex-nowrap overflow-hidden"
-                : "min-h-10 px-3 py-2 flex-wrap",
+                ? "h-9 rounded-full px-3 py-1 flex-nowrap overflow-hidden"
+                : "rounded-lg min-h-10 px-3 py-2 flex-wrap",
               hasSelection
                 ? "border-foreground/20"
                 : "border-input",
