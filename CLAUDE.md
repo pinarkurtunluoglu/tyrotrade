@@ -19,7 +19,20 @@ There is no test runner configured. `npm run lint` runs the TypeScript compiler 
 
 TYRO International Trade ("tyrotrade") — a dashboard for Tiryaki's international commodity trade operations: buying grain / oilseed at one port, shipping it to another via vessel or truck, tracking budget vs. actuals across the voyage. The data model mirrors the Dynamics 365 F&O **TRYK Projeler** module (project header + vessel plan + project lines + cost estimate + actuals). Active scope is filtered server-side to `mserp_dlvmode eq 'Gemi' and mserp_tryprojectsegment ne null` (~320 sea projects).
 
-Sibling app **tyrostrategy** lives at `C:\Users\Cenk\Desktop\tyrostrategy-repo\tyrostrategy-app`. They share the lowercase wordmark and Inter Variable font but the brand gradient diverged: tyrotrade uses **sky-navy** (`#38bdf8 → #2563eb → #1e3a8a` via `.text-brand-gradient`); tyrostrategy stayed with gold. Don't reintroduce gold on the tyrotrade wordmark.
+Main app surfaces (each is its own page module):
+
+- `/` — **Dashboard** (BentoGrid KPI tiles + Leaderboards + Events)
+- `/projects` and `/projects/:projectId` — **Vessel Projects** (3-pane: list + map + detail rail)
+- `/pl-cost` — **Trade Cost** (Tahmini × Gerçekleşen — segment-level hierarchical comparison; route prefix `/pl-cost` preserved for code-search continuity, UI label says "Trade Cost")
+- `/data` — **Veri Yönetimi** inspector (raw entity tabs + refresh button)
+- `/settings`, `/help` — config / help
+
+Sibling apps share the lowercase wordmark and Inter Variable font:
+
+- **tyrostrategy** (`C:\Users\Cenk\Desktop\tyrostrategy-repo\tyrostrategy-app`) — gold gradient identity
+- **TYRO Stock** (sibling inventory/WMS app, opens `https://tyrowms.github.io/` in a new tab — host name kept until the rebrand moves) — aurora gradient identity
+
+tyrotrade itself uses **sky-navy** (`#38bdf8 → #2563eb → #1e3a8a` via `.text-brand-gradient`). Don't reintroduce gold on the tyrotrade wordmark.
 
 ## Architecture
 
@@ -58,8 +71,9 @@ This is the most important section to internalise. Real F&O data flows through f
                  │  localStorage   tyro:dv:<entitySet>             │
                  │  src/lib/storage/entityCache.ts                 │
                  │  — single source of truth for every consumer    │
-                 │  — writeCache() also fires `tyro:cache-updated` │
-                 │    so same-tab subscribers re-render            │
+                 │  — writeCache() AND clearCache() both fire      │
+                 │    `tyro:cache-updated` so same-tab subscribers │
+                 │    re-render on writes AND invalidations        │
                  └────────────────────┬────────────────────────────┘
                                       │ readCache(entitySet)
                 ┌─────────────────────┴────────────────────┐
@@ -86,6 +100,14 @@ This is the most important section to internalise. Real F&O data flows through f
 **Cache fingerprint pattern.** `useRealProjects` doesn't deep-compare cache contents — it reads an 80-char prefix of each `tyro:dv:<entitySet>` localStorage value as a fingerprint, listens to both the native `storage` event (cross-tab) AND a custom `tyro:cache-updated` event (same-tab, fired by `writeCache`), and re-runs `composeProjects` only when a fingerprint changes. Don't replace this with full `useState` of large arrays — performance was specifically tuned around the fingerprint approach.
 
 **Per-project on-demand hooks.** `useProjectInvoices`, `useProjectExpenseLines`, `useProjectActualExpense`, `useProjectFull` fetch project-scoped data when a single project is selected. They DON'T go through the `tyro:dv:*` cache — they fetch on every project change with in-memory state and a `cancelled` flag in the effect cleanup. This avoids cache quota issues on small per-project datasets. Every `await` in these hooks must be followed by `if (cancelled) return` or stale state will leak across project switches.
+
+**Derived synthetic caches (lazy-loaded by their consumer page).** Some pages need a tenant-wide aggregation that's too slow to run inside the main refresh chain. The current example is `tyro:dv:actualExpenseRollup` (used by Trade Cost — see `useActualExpenseRollup`): a 4-stage pipeline (inventdimb → dist → expense-line + parallel refmap) that takes ~30-60 s across all 224 active projects. It's NOT a real Dataverse entity set — `writeCache` just accepts any string key. Pattern:
+
+- Lazy auto-fetch on page mount when the cache is empty or older than 6 h.
+- Manual "Yenile" button on the page re-runs it explicitly.
+- The main `refreshAllEntities` chain calls `clearCache(ACTUAL_EXPENSE_ROLLUP_CACHE)` at the end so the next Trade Cost visit re-runs the pipeline (the underlying invoice/expense rows just changed). The `tyro:cache-updated` event from `clearCache` makes the same-tab consumer drop its rows immediately.
+
+If you add another expensive aggregation, follow this lazy pattern instead of growing the refresh chain.
 
 ### F&O / `mserp_*` entity conventions
 
@@ -127,10 +149,25 @@ Step 3 ─ enrich each Step-2 row by setting `mserp_refexpenseid` from
 
 The refmap step is best-effort: a failure logs a warning and the chain proceeds with raw rows (the textual class column reads empty in the UI).
 
+**Tenant-wide variant for Trade Cost.** The same 4-stage pipeline runs at scale in `fetchActualExpenseRollupForAllProjects` (`src/lib/dataverse/actualExpenseRollup.ts`) — one IN-chunked sweep across every active projectNo instead of one project at a time. Output is a flat `ActualExpenseRollupRow[]` (per-project × expenseId aggregate) cached at `tyro:dv:actualExpenseRollup`. Same refmap join, same 710041 sign-flip — so per-project drill-downs and the Trade Cost aggregate always agree.
+
 ### Special-case rules in P&L math
 
-- **Code `710041` (Satış Fiyat Farkı)** is an FX-driven sales price-difference adjustment that REDUCES realised expense burden. In `BudgetSalesCard.tsx` (and any future P&L surface), rows with `mserp_expenseid === "710041"` are rendered as positive (green `+$X`) instead of negative AND subtracted from `gerceklesenGiderUsd` instead of added. The headline "Gerçekleşen Gider" total flips sign when net price-diff exceeds raw expenses (rare but handled). Hard-coded by code via `PRICE_DIFF_EXPENSE_CODE` — if F&O introduces another such code, add it next to that constant.
+- **Code `710041` (Satış Fiyat Farkı)** is an FX-driven sales price-difference adjustment that REDUCES realised expense burden. In `BudgetSalesCard.tsx`, `actualExpenseRollup.ts`, and any future P&L surface, rows with `mserp_expenseid === "710041"` are rendered as positive (green `+$X`) instead of negative AND subtracted from the realised total instead of added. The headline "Gerçekleşen Gider" can flip sign when net price-diff exceeds raw expenses (rare but handled). Hard-coded by code via `PRICE_DIFF_EXPENSE_CODE` — if F&O introduces another such code, add it next to that constant in BOTH files.
 - **`selectTransitDays(p)`** in `src/lib/selectors/project.ts` is the single source of truth for transit-day computation. Both `aggregateAvgTransitDays` (Velocity tile) and `VelocityBreakdown` (drawer) read it so tile and breakdown numbers always agree.
+
+### Trade Cost report (`/pl-cost`)
+
+The Tahmini × Gerçekleşen comparison page is structurally distinct enough to be worth documenting:
+
+- **Page module**: `src/pages/PLCostPage.tsx`. Internal identifiers (file name, hook name, types) preserved the legacy "PL Cost" naming for code-search continuity; the UI label is "Trade Cost". Don't rename the files.
+- **Cache + progress**: `useActualExpenseRollup()` is the only hook the page reads expense numbers from. While `isFetching` is true (initial mount with empty cache, post-Veri-Yönetimi invalidation, or manual "Yenile"), the entire content area is replaced by `PLCostProgress` — a chain-of-thought "AI thinking" panel that narrates each of the five rollup stages. The headline phrase rotates with the currently-running stage (`STAGE_META[stage].aiPhrase`). No background-spinner state — every active fetch is a full takeover so the user always sees what's happening.
+- **Tree builder**: `buildPLCostTree(projects, rollupRows, viewMode)` in `src/lib/selectors/plCost.ts` produces a 4-level hierarchy — `Segment → Voyage Status → Vessel|Project → Expense Line`. `viewMode` ("vessel" / "project") only changes the L3 grouping key. Parent metrics are bottom-up sums; derived ratios (R/E %, R/E Ton %) are re-derived at every level by `finaliseMetrics`.
+- **Sortable columns**: `sortTree(nodes, key, dir)` in `PLCostTable.tsx` recurses through every level so each parent's children reorder in place. Sort state lives in the table; click toggles asc ↔ desc, switching column resets to that column's natural default (alpha → asc, numeric → desc). Nulls always sort to the end regardless of direction.
+- **Smart insights ribbon**: `generateSmartInsights(tree)` in `src/lib/selectors/plInsights.ts` produces up to five segment-level callouts (En Dengeli / En Masraflı / En Az Masraflı / Tahminden En Çok Sapan / Tahminden En Az Sapan). Diversification logic: each slot iterates its own ranked candidate list and picks the highest-ranked segment that isn't already consumed by a higher-priority slot — every slot reliably surfaces a distinct segment instead of silently dropping when its #1 candidate collides.
+- **Detail panel deep links**: `PLCostDetailPanel` turns any visible projectNo (`PRJ000…`, `TRKTHL01305`, etc. via `/^[A-Z]{3,}\d{3,}$/` heuristic) into `<Link to="/projects/X" state={{ focusProjectNo: X }}>`. `ProjectsPage` consumes that state once and pre-filters the left rail to one project so the user lands with no ambiguity about which project just opened.
+- **Quick filters**: 6 multiselect comboboxes (`PLCostQuickFilters`) share the same `ProjectFilterState` as the popover-style `AdvancedFilter` button next to them — edits in one surface mirror the other. Triggers use `MultiSelectCombobox` in **compact mode** (`compact={true}` prop): fixed `h-9 rounded-full` height, single selected chip + "+N" overflow pill instead of stacking chips down. This mode only exists for tight toolbars; default (wrap-and-grow `min-h-10 rounded-lg`) is preserved for AdvancedFilter popover and Dashboard.
+- **Trade Cost-specific filter defaults**: `makeEmptyFilters({ period: "all", includeWithoutShipPlan: true })` — period defaults to "all" because Tahmini × Gerçekleşen lifecycles span multiple fiscal years. The AdvancedFilter on this page passes `periodDefault="all"` so its active-filter badge doesn't fire on the page's own default.
 
 ### Mock data pipeline (offline / dev mode)
 
@@ -181,6 +218,8 @@ Wordmark is always lowercase: "tyro" (black on light, white on dark) + "trade" (
 ### Sidebar behavior
 
 `src/components/layout/sidebar-context.tsx` tracks `pinned` (persisted under `tyro:sidebar:pinned`) and `hovering`. Effective expanded state = `pinned || hovering`. `AppShell.tsx`'s `DesktopSidebarSlot` drives `hovering` with a 180ms close delay to avoid flicker. Mobile uses a shadcn `Sheet` drawer instead of hover.
+
+The Sistem group (below the main nav, above the footer) carries two sibling-app shortcuts above Yardım: **TYRO AI** (button — opens the right-side AI drawer) and **TYRO Stock** (external link — opens the WMS sibling app in a new tab). They live in the sidebar instead of the topbar so the topbar stays compact; the AI drawer state is lifted to `ShellInner` and the sidebar receives an `onOpenAi` callback. The TYRO Stock row uses the origami `<Logo palette="aurora" />` as its icon (a tiny sibling-app brand mark); TYRO AI uses the same `AiBrain02Icon` the drawer header carries so the click visually rhymes with the drawer that opens. Render via `SidebarToolItem` — the icon prop is `iconNode: ReactNode` (any element, not a HugeIcon-only signature), with an optional `accentDot` for monochrome glyphs.
 
 ### Field labels + inspector configuration
 
