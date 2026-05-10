@@ -9,7 +9,6 @@ import {
   BoatIcon,
   Briefcase01Icon,
 } from "@hugeicons/core-free-icons";
-import { Loader2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -251,7 +250,12 @@ export function PLCostPage() {
       {/* ─── İçerik ─── */}
       {rollup.error ? (
         <ErrorState error={rollup.error} onRetry={rollup.refresh} />
-      ) : rollup.isFetching && rollup.isEmpty ? (
+      ) : rollup.isFetching ? (
+        // Any in-flight fetch — initial load, post-Veri-Yönetimi
+        // invalidation, or manual "Yenile" click — takes over the
+        // content area with the TYRO AI progress UI. The user sees
+        // the five-step chain in detail instead of staring at stale
+        // numbers while the engine rebuilds them.
         <GlassPanel tone="default" className="flex-1 min-h-0 rounded-2xl">
           <PLCostProgress
             stages={rollup.stages}
@@ -283,12 +287,11 @@ export function PLCostPage() {
               onSelectNode={(node) => setSelectedNodeId(node.id)}
             />
           </div>
-          {rollup.isFetching && (
-            <div className="text-[11px] text-muted-foreground/80 flex items-center gap-1.5 shrink-0">
-              <Loader2 className="size-3 animate-spin" /> Arka planda
-              yenileniyor...
-            </div>
-          )}
+          {/* Inline "background refresh" indicator was here, but now
+              that any active fetch swaps the content for the full
+              progress UI, this branch is only reached when isFetching
+              is false — so the indicator never fired. Removed for
+              clarity. */}
         </div>
       )}
       {/* Detail side panel — slide-in / dismissible. Lives outside

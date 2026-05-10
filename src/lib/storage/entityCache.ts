@@ -108,6 +108,10 @@ export function writeCache<T = Record<string, unknown>>(
 export function clearCache(entitySet: string): void {
   if (typeof localStorage === "undefined") return;
   localStorage.removeItem(key(entitySet));
+  // Same-tab consumers listening on the custom event need to know the
+  // slot is gone — without this dispatch, a hook reading via the
+  // fingerprint pattern would stay stale until the next page reload.
+  dispatchCacheUpdated(entitySet);
 }
 
 export function clearAllCaches(): void {

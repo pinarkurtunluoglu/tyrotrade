@@ -7,13 +7,14 @@ interface TyroWmsButtonProps {
 }
 
 /**
- * Sister-app shortcut — opens TYROWMS (warehouse management) in a new
- * tab. Wears the official tyrowms.github.io aurora gradient (sky →
- * violet → cyan) so it reads as a colour pair with the TYRO AI button.
+ * Sister-app shortcut — opens TYROSTOCK (the warehouse/inventory
+ * management app that used to be called tyrowms) in a new tab.
+ * Wears the official aurora gradient (sky → violet → cyan) so it
+ * reads as a colour pair with the TYRO AI button.
  *
  * Collapsed-by-default: at rest the button is a circular icon-only
  * pill (9×9) so it doesn't crowd the topbar. On hover it animates the
- * width open to reveal the "tyrowms" wordmark — full button visible.
+ * width open to reveal the "tyrostock" wordmark — full button visible.
  */
 
 const AURORA_GRADIENT =
@@ -35,12 +36,13 @@ export function TyroWmsButton({ className }: TyroWmsButtonProps) {
         "group relative inline-flex items-center shrink-0 overflow-hidden",
         "rounded-full h-9 text-[13px] font-semibold lowercase text-white",
         "ring-1 ring-white/20 hover:ring-white/40",
-        // Width animation: 36px collapsed → 138px expanded. The expanded
-        // width is sized so the centred "tyrowms" wordmark at 13px sits
-        // comfortably between the icon and the right edge without
-        // crowding either side.
+        // Width animation: 36px collapsed → 146px expanded. The expanded
+        // width is sized so the centred "tyrostock" wordmark at 13px
+        // sits comfortably between the icon and the right edge without
+        // crowding either side (tyrostock is 1 character longer than
+        // the legacy tyrowms label).
         "transition-[width,box-shadow,transform] duration-300 ease-out",
-        hovered ? "w-[138px]" : "w-9",
+        hovered ? "w-[146px]" : "w-9",
         "active:scale-95",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         className
@@ -49,7 +51,7 @@ export function TyroWmsButton({ className }: TyroWmsButtonProps) {
         background: AURORA_GRADIENT,
         boxShadow: `0 4px 14px -4px ${AURORA_RING}, inset 0 1px 0 0 rgba(255,255,255,0.25)`,
       }}
-      aria-label="TYROWMS uygulamasını aç"
+      aria-label="TYROSTOCK uygulamasını aç"
     >
       {/* Animated shimmer overlay on hover */}
       <span
@@ -85,7 +87,7 @@ export function TyroWmsButton({ className }: TyroWmsButtonProps) {
         )}
       >
         <span className="text-white">tyro</span>
-        <span className="text-white font-bold">wms</span>
+        <span className="text-white font-bold">stock</span>
       </span>
     </a>
   );

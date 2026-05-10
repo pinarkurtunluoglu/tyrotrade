@@ -1,6 +1,10 @@
 import { getDataverseClient, type DataverseClient } from "@/lib/dataverse";
 import type { ODataQuery } from "@/lib/dataverse/odata";
-import { readCache, writeCache } from "@/lib/storage/entityCache";
+import {
+  readCache,
+  writeCache,
+  clearCache,
+} from "@/lib/storage/entityCache";
 import {
   PROJECT_COLUMNS,
   PROJECT_LINE_COLUMNS,
@@ -792,6 +796,16 @@ export async function refreshAllEntities(
       };
     }
   }
+
+  // The Trade Cost rollup is derived from invoice + expense entities
+  // that just changed underneath us. The rollup itself isn't part of
+  // the refresh chain (it would add 1+ minute) — but leaving the old
+  // snapshot in place after a successful refresh would let the user
+  // see stale aggregates next time they open the page. Invalidating
+  // the cache here means the next mount of `useActualExpenseRollup`
+  // sees an empty snapshot, runs the lazy auto-fetch, and shows the
+  // TYRO AI progress UI so the user knows it's recomputing.
+  clearCache(ACTUAL_EXPENSE_ROLLUP_CACHE);
 
   return {
     ok: true,
