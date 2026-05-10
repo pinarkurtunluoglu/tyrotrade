@@ -1,6 +1,5 @@
 import * as React from "react";
 import { Link } from "react-router-dom";
-import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   DashboardSpeed01Icon,
@@ -124,45 +123,10 @@ export function PLCostPage() {
 
   const insights = React.useMemo(() => generateSmartInsights(tree), [tree]);
 
-  // Refresh button: fire a sticky toast on click, swap to success on
-  // completion, error on failure. Watches `isFetching` and `error` so
-  // the user always sees a clear "started → finished" handshake even
-  // though the refresh chain takes ~30-60s.
-  const refreshToastIdRef = React.useRef<string | number | null>(null);
-  const wasFetchingRef = React.useRef(false);
-  React.useEffect(() => {
-    if (rollup.isFetching && !wasFetchingRef.current) {
-      // Just started — open a sticky loading toast.
-      refreshToastIdRef.current = toast.loading(
-        "Trade Cost hesaplama motoru çalıştırılıyor",
-        {
-          description:
-            "5 aşamalı zincirleme analiz çalışıyor — birkaç dakika sürebilir.",
-          duration: Infinity,
-        }
-      );
-    }
-    if (!rollup.isFetching && wasFetchingRef.current) {
-      // Just finished — replace with success / error.
-      const id = refreshToastIdRef.current;
-      if (rollup.error) {
-        toast.error("Yenileme başarısız oldu", {
-          id: id ?? undefined,
-          description: rollup.error,
-          duration: 8000,
-        });
-      } else {
-        toast.success("Trade Cost verileri güncellendi", {
-          id: id ?? undefined,
-          description: `${rollup.rows.length.toLocaleString("tr-TR")} özet satırı hazırlandı.`,
-          duration: 4000,
-        });
-      }
-      refreshToastIdRef.current = null;
-    }
-    wasFetchingRef.current = rollup.isFetching;
-  }, [rollup.isFetching, rollup.error, rollup.rows.length]);
-
+  // Refresh handler — the TYRO AI progress UI takes over the content
+  // area whenever `isFetching` is true, so there's no separate toast
+  // to fire here. Errors still surface inline via the ErrorState
+  // panel (which already covers the same content slot).
   const handleRefresh = React.useCallback(() => {
     if (rollup.isFetching) return;
     rollup.refresh();
