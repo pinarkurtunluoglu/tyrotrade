@@ -1,9 +1,12 @@
+import * as React from "react";
 import { Link } from "react-router-dom";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ChartLineData01Icon,
   Database01Icon,
   RefreshIcon,
+  ShipmentTrackingIcon,
+  ProjectorIcon,
 } from "@hugeicons/core-free-icons";
 import { Loader2 } from "lucide-react";
 import { GlassPanel } from "@/components/glass/GlassPanel";
@@ -12,31 +15,76 @@ import { useThemeAccent } from "@/components/layout/theme-accent";
 import { useProjects } from "@/hooks/useProjects";
 import { useActualExpenseRollup } from "@/hooks/useActualExpenseRollup";
 import { formatDate } from "@/lib/format";
+import {
+  buildPLCostTree,
+  aggregateRootMetrics,
+  type ViewMode,
+  type PLCostNode,
+} from "@/lib/selectors/plCost";
+import { PLCostTable } from "@/components/pl-cost/PLCostTable";
+import { PLCostKpiTiles } from "@/components/pl-cost/PLCostKpiTiles";
 
 /**
  * P&L Cost — Tahmini × Gerçekleşen maliyet karşılaştırma raporu.
  *
- * Hierarchy: Segment → Voyage Status → Vessel/Project (toggle) →
- * Expense Line. Üstte 5 KPI tile + smart insights ribbon, altında
- * sticky-tree hierarchical table, sağda slide-in detail panel.
+ * Layout:
+ *   - Toolbar: title + view-mode segmented control (Gemi/Proje) +
+ *     manual "Yenile" button
+ *   - 5 KPI tiles (Toplam Tahmini, Gerçekleşen, %, Δ, En Sapan)
+ *   - Hierarchical table: Segment → Voyage → Vessel/Project → Expense
  *
- * Data: `useActualExpenseRollup` lazy auto-fetches the tenant-wide
- * realised-expense rollup on mount (cache miss / stale). The
- * 4-stage pipeline is heavy (~1-2 min) so it's excluded from the
- * bulk refresh — visitors who never open this page don't pay for
- * it. A manual "Yenile" button forces a fresh fetch.
- *
- * MVP iskeletini bu commit kuruyor: page chrome + auto-fetch loading
- * UI + diagnostic preview. Tree-aggregate + table + KPI tile'ları
- * sonraki phase'lerde geliyor.
+ * Data:
+ *   - Project skeleton from `useProjects` (filtered by composer)
+ *   - Realised expense rollup from `useActualExpenseRollup`
+ *     (lazy auto-fetched on mount, 6h freshness cache)
  */
 export function PLCostPage() {
   const accent = useThemeAccent();
   const { projects } = useProjects();
   const rollup = useActualExpenseRollup();
+  const [viewMode, setViewMode] = React.useState<ViewMode>("project");
 
   const totalProjects = projects.length;
-  const isPipelineReady = !rollup.isEmpty;
+
+  // Build the tree only once per (projects × rollup × viewMode) combo.
+  const tree = React.useMemo<PLCostNode[]>(() => {
+    if (rollup.isEmpty || projects.length === 0) return [];
+    return buildPLCostTree(projects, rollup.rows, viewMode);
+  }, [projects, rollup.rows, rollup.isEmpty, viewMode]);
+
+  const rootMetrics = React.useMemo(
+    () => aggregateRootMetrics(tree),
+    [tree]
+  );
+
+  // Find the L3 row with the largest |deltaUsd| — this is the
+  // "En Sapan" KPI tile. Skip nodes whose expected is 0 (they
+  // produce infinite ratios but no real signal).
+  const topVariance = React.useMemo(() => {
+    let best: { node: PLCostNode } | null = null;
+    const walk = (nodes: PLCostNode[]) => {
+      for (const n of nodes) {
+        if (n.level === 3 && n.metrics.expectedUsd > 0) {
+          if (
+            !best ||
+            Math.abs(n.metrics.deltaUsd) >
+              Math.abs(best.node.metrics.deltaUsd)
+          ) {
+            best = { node: n };
+          }
+        }
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(tree);
+    if (!best) return undefined;
+    const node: PLCostNode = (best as { node: PLCostNode }).node;
+    return {
+      label: node.label,
+      deltaUsd: node.metrics.deltaUsd,
+      realizedExpectedPct: node.metrics.realizedExpectedPct,
+    };
+  }, [tree]);
 
   return (
     <div className="h-full flex flex-col gap-3 min-h-0">
@@ -69,9 +117,9 @@ export function PLCostPage() {
               )}
             </div>
           </div>
-          {/* Sağ: manuel refresh button — test için. Hook auto-fetch
-              zaten yapıyor, ama freshness'ı bypass etmek için. */}
+          {/* Sağ: view mode segmented + manual refresh */}
           <div className="flex items-center gap-2 shrink-0">
+            <ViewModeToggle value={viewMode} onChange={setViewMode} />
             <Button
               variant="outline"
               size="sm"
@@ -96,106 +144,180 @@ export function PLCostPage() {
 
       {/* ─── İçerik ─── */}
       {rollup.error ? (
-        <GlassPanel tone="default" className="flex-1 min-h-0 rounded-2xl">
-          <div className="h-full flex items-center justify-center p-8">
-            <div className="max-w-md text-center space-y-3">
-              <div className="text-rose-700 font-semibold">Hata</div>
-              <p className="text-sm text-muted-foreground break-words">
-                {rollup.error}
-              </p>
-              <Button onClick={rollup.refresh} variant="outline" size="sm">
-                Tekrar dene
-              </Button>
-            </div>
-          </div>
-        </GlassPanel>
+        <ErrorState error={rollup.error} onRetry={rollup.refresh} />
       ) : rollup.isFetching && rollup.isEmpty ? (
-        // İlk yüklemede: full-page progress
-        <GlassPanel tone="default" className="flex-1 min-h-0 rounded-2xl">
-          <div className="h-full flex items-center justify-center p-8">
-            <div className="max-w-md text-center space-y-4">
-              <Loader2
-                className="size-10 mx-auto animate-spin"
-                style={{ color: accent.solid }}
-              />
-              <div>
-                <div className="text-base font-semibold">
-                  Veriler hazırlanıyor
-                </div>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Gerçekleşen gider rollup'ı 4-aşamalı sorgu zinciri
-                  ile çekiliyor (inventdimb → dist → expense-line +
-                  refmap). Bu işlem 1-2 dakika sürebilir.
-                </p>
-              </div>
-            </div>
-          </div>
-        </GlassPanel>
-      ) : isPipelineReady ? (
-        <GlassPanel tone="default" className="flex-1 min-h-0 rounded-2xl">
-          <div className="p-4 flex flex-col gap-3 h-full overflow-auto">
-            <div className="text-sm text-muted-foreground">
-              Veri pipeline hazır — <strong>{rollup.rows.length}</strong> rollup
-              satırı cache'lendi. Tree + KPI + tablo Phase N.3-N.5'te
-              canlanacak.
-              {rollup.isFetching && (
-                <span className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground/80">
-                  <Loader2 className="size-3 animate-spin" /> Arka planda
-                  yenileniyor...
-                </span>
-              )}
-            </div>
-            {/* Geçici inceleme: ilk 20 row */}
-            <div className="text-[11px] font-mono bg-foreground/[0.04] rounded-lg p-3 max-h-[60vh] overflow-auto">
-              <pre className="whitespace-pre-wrap break-words">
-                {JSON.stringify(rollup.rows.slice(0, 20), null, 2)}
-              </pre>
-            </div>
-          </div>
-        </GlassPanel>
+        <FullPageLoading accentColor={accent.solid} />
+      ) : rollup.isEmpty ? (
+        <EmptyState accentColor={accent.solid} accentRing={accent.ring} accentGradient={accent.gradient} />
       ) : (
-        // Cache yok + fetch tetiklenmemiş (rare — auto-fetch genelde
-        // hemen çalışır). Empty state ile fallback.
-        <GlassPanel tone="default" className="flex-1 min-h-0 rounded-2xl">
-          <div className="h-full flex items-center justify-center p-8">
-            <div className="max-w-md text-center space-y-4">
-              <span
-                className="size-14 mx-auto rounded-2xl grid place-items-center text-white"
-                style={{
-                  background: accent.gradient,
-                  boxShadow: `0 6px 18px -4px ${accent.ring}`,
-                }}
-              >
-                <HugeiconsIcon
-                  icon={ChartLineData01Icon}
-                  size={26}
-                  strokeWidth={2}
-                />
-              </span>
-              <div>
-                <div className="text-base font-semibold">
-                  Veri henüz yüklenmedi
-                </div>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Önce projeler verisi çekilmeli. Veri Yönetimi sayfasından
-                  Verileri Güncelle'ye basıp dönün — bu sayfa otomatik
-                  hazırlamaya başlar.
-                </p>
-              </div>
-              <Button asChild>
-                <Link to="/data" className="gap-1.5">
-                  <HugeiconsIcon
-                    icon={Database01Icon}
-                    size={16}
-                    strokeWidth={2}
-                  />
-                  Veri Yönetimi'ne git
-                </Link>
-              </Button>
-            </div>
+        <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+          <PLCostKpiTiles
+            rootMetrics={rootMetrics}
+            totalProjects={totalProjects}
+            topVariance={topVariance}
+          />
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <PLCostTable tree={tree} />
           </div>
-        </GlassPanel>
+          {rollup.isFetching && (
+            <div className="text-[11px] text-muted-foreground/80 flex items-center gap-1.5 shrink-0">
+              <Loader2 className="size-3 animate-spin" /> Arka planda
+              yenileniyor...
+            </div>
+          )}
+        </div>
       )}
     </div>
+  );
+}
+
+/** Görünüm Modu (Gemi/Proje) — segmented pill toggle. */
+function ViewModeToggle({
+  value,
+  onChange,
+}: {
+  value: ViewMode;
+  onChange: (v: ViewMode) => void;
+}) {
+  return (
+    <div className="inline-flex items-center rounded-full bg-foreground/[0.06] p-0.5">
+      <ToggleButton
+        active={value === "project"}
+        onClick={() => onChange("project")}
+        icon={ProjectorIcon}
+        label="Proje"
+      />
+      <ToggleButton
+        active={value === "vessel"}
+        onClick={() => onChange("vessel")}
+        icon={ShipmentTrackingIcon}
+        label="Gemi"
+      />
+    </div>
+  );
+}
+
+function ToggleButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  icon: any;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-2.5 py-1 rounded-full text-[12px] font-medium flex items-center gap-1.5 transition-colors ${
+        active
+          ? "bg-background shadow-sm text-foreground"
+          : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      <HugeiconsIcon icon={icon} size={13} strokeWidth={2} />
+      {label}
+    </button>
+  );
+}
+
+function ErrorState({
+  error,
+  onRetry,
+}: {
+  error: string;
+  onRetry: () => void;
+}) {
+  return (
+    <GlassPanel tone="default" className="flex-1 min-h-0 rounded-2xl">
+      <div className="h-full flex items-center justify-center p-8">
+        <div className="max-w-md text-center space-y-3">
+          <div className="text-rose-700 font-semibold">Hata</div>
+          <p className="text-sm text-muted-foreground break-words">{error}</p>
+          <Button onClick={onRetry} variant="outline" size="sm">
+            Tekrar dene
+          </Button>
+        </div>
+      </div>
+    </GlassPanel>
+  );
+}
+
+function FullPageLoading({ accentColor }: { accentColor: string }) {
+  return (
+    <GlassPanel tone="default" className="flex-1 min-h-0 rounded-2xl">
+      <div className="h-full flex items-center justify-center p-8">
+        <div className="max-w-md text-center space-y-4">
+          <Loader2
+            className="size-10 mx-auto animate-spin"
+            style={{ color: accentColor }}
+          />
+          <div>
+            <div className="text-base font-semibold">Veriler hazırlanıyor</div>
+            <p className="text-sm text-muted-foreground mt-1">
+              Gerçekleşen gider rollup'ı 4-aşamalı sorgu zinciri ile çekiliyor
+              (inventdimb → dist → expense-line + refmap). Bu işlem 1-2
+              dakika sürebilir.
+            </p>
+          </div>
+        </div>
+      </div>
+    </GlassPanel>
+  );
+}
+
+function EmptyState({
+  accentColor,
+  accentRing,
+  accentGradient,
+}: {
+  accentColor: string;
+  accentRing: string;
+  accentGradient: string;
+}) {
+  return (
+    <GlassPanel tone="default" className="flex-1 min-h-0 rounded-2xl">
+      <div className="h-full flex items-center justify-center p-8">
+        <div className="max-w-md text-center space-y-4">
+          <span
+            className="size-14 mx-auto rounded-2xl grid place-items-center text-white"
+            style={{
+              background: accentGradient,
+              boxShadow: `0 6px 18px -4px ${accentRing}`,
+            }}
+          >
+            <HugeiconsIcon
+              icon={ChartLineData01Icon}
+              size={26}
+              strokeWidth={2}
+            />
+          </span>
+          <div>
+            <div className="text-base font-semibold">Veri henüz yüklenmedi</div>
+            <p className="text-sm text-muted-foreground mt-1">
+              Önce projeler verisi çekilmeli. Veri Yönetimi sayfasından Verileri
+              Güncelle'ye basıp dönün — bu sayfa otomatik hazırlamaya başlar.
+            </p>
+          </div>
+          <Button asChild>
+            <Link to="/data" className="gap-1.5">
+              <HugeiconsIcon
+                icon={Database01Icon}
+                size={16}
+                strokeWidth={2}
+              />
+              Veri Yönetimi'ne git
+            </Link>
+          </Button>
+          <div className="text-[10px] text-muted-foreground/60">
+            {accentColor /* eslint guard */}
+          </div>
+        </div>
+      </div>
+    </GlassPanel>
   );
 }
