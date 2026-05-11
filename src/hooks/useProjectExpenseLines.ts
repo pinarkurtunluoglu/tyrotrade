@@ -21,6 +21,18 @@ const DIST_ENTITY = "mserp_tryaifrtexpenselinedistlineentities";
  *  `mserp_expensenum`. */
 const EXPENSE_ENTITY = "mserp_tryaiexpenselineentities";
 
+/** Expense HEADER entity — one row per `mserp_expensenum` carrying
+ *  the row's currency + USD exchange rate. The LINE entity exposes
+ *  only the native-currency amount (`mserp_amountcur`) and no
+ *  currency context, so non-USD entries silently inflate any naive
+ *  USD sum (a TRY 1M entry would otherwise be summed as $1M). We
+ *  fetch headers in parallel chunks once we have the expensenum
+ *  set, then convert each line to USD via `amount * exchratesecond`
+ *  when the row's currency isn't already USD. Header lookup is
+ *  best-effort: if it fails the line keeps its native amount (the
+ *  legacy bug behaviour), so the rest of the chain stays usable. */
+const EXPENSE_TABLE_ENTITY = "mserp_tryaiexpensetableentities";
+
 /** Reference-map entity — per project, carries
  *  `(mserp_tryexpensetype, mserp_refexpenseid)` pairs that translate
  *  the numeric `mserp_expenseid` values surfaced on the realised
@@ -73,8 +85,20 @@ export interface UseProjectExpenseLinesReturn {
  *      `In(mserp_expensenum, …)` filter so the URL stays under
  *      proxy limits even when a project touches hundreds of expense
  *      vouchers.
+ *   2b. (PARALLEL to Step 2) Fetch the expense HEADER rows from
+ *       `mserp_tryaiexpensetableentities` for the same expensenum
+ *       chunks. Header carries `mserp_currencycode` and
+ *       `mserp_exchratesecond` (the row's USD exchange rate at the
+ *       transaction date). Build a `expensenum → { currency, rate }`
+ *       map. Best-effort — failure here just falls back to
+ *       treating the native amount as USD.
  *   3. Enrich each Step-2 row by setting `mserp_refexpenseid` from
- *      Step-R's map keyed on the row's `mserp_expenseid`.
+ *      Step-R's map keyed on the row's `mserp_expenseid`, AND
+ *      attaching a derived `mserp_amountcur_usd` field — the
+ *      native `mserp_amountcur` multiplied by Step-2b's exchRate
+ *      when the row's currency isn't USD. Consumers should sum
+ *      `mserp_amountcur_usd` for USD totals; the original
+ *      `mserp_amountcur` is preserved for the raw inspector view.
  *
  * Returns the enriched step-2 rows. The inventdimb + distribution +
  * refmap entities act as filter / lookup intermediaries only — their
@@ -191,37 +215,108 @@ export function useProjectExpenseLines(
           return;
         }
 
-        // Step 2: fetch authoritative expense-line rows for those expensenums.
-        const all: Record<string, unknown>[] = [];
+        // Step 2 + 2b in parallel: line rows (authoritative amounts
+        // in native currency) AND header rows (currency + exchRate
+        // context). Header lookup is best-effort — a failure means
+        // we lose FX conversion for any non-USD lines but the rest
+        // of the chain proceeds with native amounts.
+        const linePromises: Promise<{ value: Record<string, unknown>[] }>[] = [];
+        const headerPromises: Promise<{ value: Record<string, unknown>[] }>[] = [];
         for (let i = 0; i < expensenums.length; i += IN_CHUNK_SIZE) {
           const chunk = expensenums.slice(i, i + IN_CHUNK_SIZE);
           const inFilter = `Microsoft.Dynamics.CRM.In(PropertyName='mserp_expensenum',PropertyValues=[${chunk
             .map((n) => `'${n}'`)
             .join(",")}])`;
-          const expResult = await client.listAll<Record<string, unknown>>(
-            EXPENSE_ENTITY,
-            {
+          linePromises.push(
+            client.listAll<Record<string, unknown>>(EXPENSE_ENTITY, {
               $filter: inFilter,
               $select: EXPENSE_LINE_COLUMNS.join(","),
               $count: true,
-            }
+            })
           );
-          if (cancelled) return;
-          all.push(...expResult.value);
+          headerPromises.push(
+            client.listAll<Record<string, unknown>>(EXPENSE_TABLE_ENTITY, {
+              $filter: inFilter,
+              $select:
+                "mserp_expensenum,mserp_currencycode,mserp_exchratesecond",
+            })
+          );
+        }
+        const [lineSettled, headerSettled] = await Promise.all([
+          Promise.all(linePromises),
+          Promise.allSettled(headerPromises),
+        ]);
+        if (cancelled) return;
+
+        const all: Record<string, unknown>[] = [];
+        for (const r of lineSettled) all.push(...r.value);
+
+        // Build expensenum → { currency, exchRate } map from header
+        // rows. Each settled chunk that succeeded contributes; chunks
+        // that failed (rare, e.g. proxy error on a single batch) are
+        // skipped — lines whose expensenum lacks an entry fall back
+        // to treating amountcur as USD.
+        const fxByExpensenum = new Map<
+          string,
+          { currency: string; rate: number }
+        >();
+        for (const settled of headerSettled) {
+          if (settled.status !== "fulfilled") continue;
+          for (const h of settled.value.value) {
+            const num = String(h.mserp_expensenum ?? "").trim();
+            const cur = String(h.mserp_currencycode ?? "").trim().toUpperCase();
+            const rate = Number(h.mserp_exchratesecond);
+            if (!num) continue;
+            fxByExpensenum.set(num, {
+              currency: cur || "USD",
+              rate: Number.isFinite(rate) ? rate : 1,
+            });
+          }
+        }
+        const headerFailureCount = headerSettled.filter(
+          (s) => s.status === "rejected"
+        ).length;
+        if (headerFailureCount > 0) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[useProjectExpenseLines] expense-table header fetch failed for ${headerFailureCount}/${headerSettled.length} chunks of ${projectNo} — non-USD lines in those chunks will be treated as USD.`
+          );
         }
 
-        // Enrichment: attach `mserp_refexpenseid` (textual class) onto
-        // each row by looking up the row's `mserp_expenseid` against the
-        // refmap built during Step R. Rows whose code has no entry in
-        // the refmap stay untouched (the column will read empty in the
-        // UI). We splice the field with the same Dataverse-style key
-        // so downstream consumers (EntityRowsTable column lookup,
-        // BudgetSalesCard label fallback) can read it like any other
-        // column without a dedicated enriched-row type.
+        // Enrichment: (a) refmap → mserp_refexpenseid textual class,
+        // (b) FX conversion → mserp_amountcur_usd (native amount
+        // multiplied by exchRate when currency != USD). The original
+        // mserp_amountcur is preserved untouched for raw inspector
+        // views. Downstream P&L sums should read `_usd` so totals
+        // never mix currencies.
         const enriched = all.map((r) => {
+          const out: Record<string, unknown> = { ...r };
           const code = String(r.mserp_expenseid ?? "").trim();
           const ref = code ? refMap.get(code) : undefined;
-          return ref ? { ...r, mserp_refexpenseid: ref } : r;
+          if (ref) out.mserp_refexpenseid = ref;
+
+          const amount = Number(r.mserp_amountcur);
+          if (Number.isFinite(amount)) {
+            const expensenum = String(r.mserp_expensenum ?? "").trim();
+            const fx = expensenum ? fxByExpensenum.get(expensenum) : undefined;
+            // USD or unknown currency → no conversion. Otherwise
+            // multiply by the header's exchratesecond (rate is in
+            // USD-per-native-unit form, so e.g. TRY × 0.0750 = USD).
+            const usd =
+              !fx || fx.currency === "USD"
+                ? amount
+                : amount * fx.rate;
+            out.mserp_amountcur_usd = usd;
+            // Optional companion fields — handy in the inspector +
+            // for debugging "why does this line read as $X". They're
+            // attached only when FX context was actually found so the
+            // inspector doesn't show empty columns for USD lines.
+            if (fx) {
+              out.mserp_currencycode = fx.currency;
+              out.mserp_exchratesecond = fx.rate;
+            }
+          }
+          return out;
         });
 
         setRows(enriched);

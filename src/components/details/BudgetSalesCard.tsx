@@ -208,9 +208,14 @@ export function BudgetSalesCard({ project }: Props) {
   );
 
   // Expense — 3-step chain via `useProjectExpenseLines` (inventdimb
-  // → dist → expense-line + refmap enrichment). Amounts treated as
-  // USD because the expense-line entity doesn't expose a currency
-  // column.
+  // → dist → expense-line + refmap enrichment + header FX join).
+  // The enriched rows carry `mserp_amountcur_usd` — native amount
+  // converted to USD via the expense HEADER's `mserp_exchratesecond`
+  // when the row's currency isn't already USD. We read the `_usd`
+  // field for sums so totals never mix currencies. The original
+  // `mserp_amountcur` is still preserved for raw inspector views
+  // and is used as a fallback when the header lookup couldn't
+  // attach FX context (best-effort step).
   //
   // Special handling for code `710041` (Satış Fiyat Farkı): this is
   // an FX-driven sales price-difference adjustment that REDUCES the
@@ -223,7 +228,14 @@ export function BudgetSalesCard({ project }: Props) {
     () =>
       expenseLineQuery.rows
         .map((r) => {
-          const amount = Number(r["mserp_amountcur"]);
+          // Use the USD-converted amount when present; fall back to
+          // the native amount only when the header join didn't run
+          // for this row (rare — best-effort fallback).
+          const rawUsd = r["mserp_amountcur_usd"];
+          const amount =
+            rawUsd !== undefined && rawUsd !== null && Number.isFinite(Number(rawUsd))
+              ? Number(rawUsd)
+              : Number(r["mserp_amountcur"]);
           if (!Number.isFinite(amount) || amount === 0) return null;
           const description = String(r["mserp_description"] ?? "").trim();
           const expenseId = String(r["mserp_expenseid"] ?? "").trim();
