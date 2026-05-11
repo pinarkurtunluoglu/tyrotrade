@@ -92,7 +92,11 @@ export function BudgetSalesCard({ project }: Props) {
     [productNameByCode]
   );
 
-  /* ─────────── Estimate line breakdowns ─────────── */
+  /* ─────────── Estimate line breakdowns ───────────
+     Each breakdown is sorted by `Math.abs(amount)` desc so the
+     biggest-impact items lead when the user expands the row.
+     Stable across rerenders because the input arrays don't reshuffle
+     between fetches. */
   const tahminiSalesLines = React.useMemo(
     () =>
       lines
@@ -102,7 +106,8 @@ export function BudgetSalesCard({ project }: Props) {
           tons: l.quantityKg / 1000,
           price: l.unitPrice,
           totalNative: (l.quantityKg / 1000) * l.unitPrice,
-        })),
+        }))
+        .sort((a, b) => Math.abs(b.totalNative) - Math.abs(a.totalNative)),
     [lines, labelFor]
   );
   const tahminiPurchaseLines = React.useMemo(
@@ -114,11 +119,15 @@ export function BudgetSalesCard({ project }: Props) {
           tons: l.quantityKg / 1000,
           price: l.purchasePrice ?? 0,
           totalNative: (l.quantityKg / 1000) * (l.purchasePrice ?? 0),
-        })),
+        }))
+        .sort((a, b) => Math.abs(b.totalNative) - Math.abs(a.totalNative)),
     [lines, labelFor]
   );
   const tahminiExpenseLines = React.useMemo(
-    () => project.costEstimateLines ?? [],
+    () =>
+      [...(project.costEstimateLines ?? [])].sort(
+        (a, b) => Math.abs(b.totalUsd) - Math.abs(a.totalUsd)
+      ),
     [project.costEstimateLines]
   );
 
@@ -166,7 +175,8 @@ export function BudgetSalesCard({ project }: Props) {
           totalUsd: toUsdAtDate(amount, cur, date),
         };
       })
-      .filter((l): l is NonNullable<typeof l> => l !== null);
+      .filter((l): l is NonNullable<typeof l> => l !== null)
+      .sort((a, b) => Math.abs(b.totalUsd) - Math.abs(a.totalUsd));
   }, [invoices]);
   const gerceklesenSatisUsd = gerceklesenSalesLines.reduce(
     (s, l) => s + l.totalUsd,
@@ -200,7 +210,8 @@ export function BudgetSalesCard({ project }: Props) {
           totalUsd: toUsdAtDate(amount, cur, date),
         };
       })
-      .filter((l): l is NonNullable<typeof l> => l !== null);
+      .filter((l): l is NonNullable<typeof l> => l !== null)
+      .sort((a, b) => Math.abs(b.totalUsd) - Math.abs(a.totalUsd));
   }, [project.projectNo]);
   const gerceklesenAlimUsd = gerceklesenPurchaseLines.reduce(
     (s, l) => s + l.totalUsd,
@@ -260,7 +271,12 @@ export function BudgetSalesCard({ project }: Props) {
             isPriceDiff,
           };
         })
-        .filter((l): l is NonNullable<typeof l> => l !== null),
+        .filter((l): l is NonNullable<typeof l> => l !== null)
+        // Largest absolute amount first — the chunky expense items
+        // (KDV, demurrage, gümrük) lead instead of being scattered
+        // among the small ones. Price-diff rows participate by their
+        // magnitude too, not their sign.
+        .sort((a, b) => Math.abs(b.totalUsd) - Math.abs(a.totalUsd)),
     [expenseLineQuery.rows]
   );
   // Net gider: regular expenses ADD, price-diff entries SUBTRACT.
