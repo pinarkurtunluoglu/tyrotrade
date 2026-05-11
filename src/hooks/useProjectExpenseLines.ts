@@ -22,16 +22,25 @@ const DIST_ENTITY = "mserp_tryaifrtexpenselinedistlineentities";
 const EXPENSE_ENTITY = "mserp_tryaiexpenselineentities";
 
 /** Expense HEADER entity — one row per `mserp_expensenum` carrying
- *  the row's currency + USD exchange rate. The LINE entity exposes
- *  only the native-currency amount (`mserp_amountcur`) and no
- *  currency context, so non-USD entries silently inflate any naive
- *  USD sum (a TRY 1M entry would otherwise be summed as $1M). We
- *  fetch headers in parallel chunks once we have the expensenum
- *  set, then convert each line to USD via `amount * exchratesecond`
- *  when the row's currency isn't already USD. Header lookup is
- *  best-effort: if it fails the line keeps its native amount (the
- *  legacy bug behaviour), so the rest of the chain stays usable. */
+ *  the row's document type + currency + USD exchange rate. The
+ *  LINE entity exposes only the native-currency amount
+ *  (`mserp_amountcur`) and no currency / document context, so
+ *  without this join (a) non-USD entries silently inflate any naive
+ *  USD sum (TRY 1M would otherwise be summed as $1M) AND (b)
+ *  non-invoice document types (debit notes, manual journals, …)
+ *  leak into the realised-expense roll-up. We fetch headers in
+ *  parallel chunks once we have the expensenum set, FILTERED to
+ *  `mserp_documenttype eq 200000001` ("Fatura"), then for each
+ *  surviving expensenum convert the line to USD via
+ *  `amount * mserp_exchratesecond`. Lines whose expensenum doesn't
+ *  appear in the filtered header set are dropped — they're either
+ *  not Fatura type, or the header chunk failed. */
 const EXPENSE_TABLE_ENTITY = "mserp_tryaiexpensetableentities";
+/** F&O option-set code for "Fatura" (invoice) on
+ *  `mserp_documenttype`. The other codes (debit memo, manual
+ *  journal, advance, …) carry costs that aren't realised
+ *  expenses for the P&L surface. */
+const DOCUMENT_TYPE_INVOICE = 200000001;
 
 /** Reference-map entity — per project, carries
  *  `(mserp_tryexpensetype, mserp_refexpenseid)` pairs that translate
@@ -87,18 +96,25 @@ export interface UseProjectExpenseLinesReturn {
  *      vouchers.
  *   2b. (PARALLEL to Step 2) Fetch the expense HEADER rows from
  *       `mserp_tryaiexpensetableentities` for the same expensenum
- *       chunks. Header carries `mserp_currencycode` and
+ *       chunks, FILTERED to `mserp_documenttype eq 200000001`
+ *       (Fatura). Header carries `mserp_currencycode` and
  *       `mserp_exchratesecond` (the row's USD exchange rate at the
- *       transaction date). Build a `expensenum → { currency, rate }`
- *       map. Best-effort — failure here just falls back to
- *       treating the native amount as USD.
+ *       transaction date). Build a
+ *       `expensenum → { currency, rate }` map. Acts as BOTH the FX
+ *       lookup AND the inclusion gate — lines whose expensenum
+ *       isn't in the map are dropped in Step 3 because either
+ *       (a) the header is non-Fatura (debit note / manual journal)
+ *           which doesn't belong in realised P&L, or
+ *       (b) the header chunk failed to fetch (best-effort).
  *   3. Enrich each Step-2 row by setting `mserp_refexpenseid` from
  *      Step-R's map keyed on the row's `mserp_expenseid`, AND
  *      attaching a derived `mserp_amountcur_usd` field — the
  *      native `mserp_amountcur` multiplied by Step-2b's exchRate
- *      when the row's currency isn't USD. Consumers should sum
- *      `mserp_amountcur_usd` for USD totals; the original
- *      `mserp_amountcur` is preserved for the raw inspector view.
+ *      when the row's currency isn't USD. Lines whose expensenum
+ *      is absent from the Step-2b map are filtered out. Consumers
+ *      should sum `mserp_amountcur_usd` for USD totals; the
+ *      original `mserp_amountcur` is preserved for the raw
+ *      inspector view.
  *
  * Returns the enriched step-2 rows. The inventdimb + distribution +
  * refmap entities act as filter / lookup intermediaries only — their
@@ -216,10 +232,11 @@ export function useProjectExpenseLines(
         }
 
         // Step 2 + 2b in parallel: line rows (authoritative amounts
-        // in native currency) AND header rows (currency + exchRate
-        // context). Header lookup is best-effort — a failure means
-        // we lose FX conversion for any non-USD lines but the rest
-        // of the chain proceeds with native amounts.
+        // in native currency) AND header rows (filtered to Fatura
+        // doc-type, carrying currency + exchRate context). The
+        // header map now serves two roles — FX lookup AND inclusion
+        // gate. Lines whose expensenum isn't represented in the
+        // map are dropped (non-Fatura headers + best-effort failures).
         const linePromises: Promise<{ value: Record<string, unknown>[] }>[] = [];
         const headerPromises: Promise<{ value: Record<string, unknown>[] }>[] = [];
         for (let i = 0; i < expensenums.length; i += IN_CHUNK_SIZE) {
@@ -234,9 +251,15 @@ export function useProjectExpenseLines(
               $count: true,
             })
           );
+          // Header filter combines the chunk's IN(expensenum, …)
+          // with the Fatura document-type gate so the response only
+          // contains invoice-type expenses. Lines whose expensenum
+          // is absent from the response are then dropped in the
+          // enrichment step below.
+          const headerFilter = `${inFilter} and mserp_documenttype eq ${DOCUMENT_TYPE_INVOICE}`;
           headerPromises.push(
             client.listAll<Record<string, unknown>>(EXPENSE_TABLE_ENTITY, {
-              $filter: inFilter,
+              $filter: headerFilter,
               $select:
                 "mserp_expensenum,mserp_currencycode,mserp_exchratesecond",
             })
@@ -251,11 +274,14 @@ export function useProjectExpenseLines(
         const all: Record<string, unknown>[] = [];
         for (const r of lineSettled) all.push(...r.value);
 
-        // Build expensenum → { currency, exchRate } map from header
-        // rows. Each settled chunk that succeeded contributes; chunks
-        // that failed (rare, e.g. proxy error on a single batch) are
-        // skipped — lines whose expensenum lacks an entry fall back
-        // to treating amountcur as USD.
+        // Build expensenum → { currency, exchRate } map from
+        // FATURA-filtered header rows. Each settled chunk that
+        // succeeded contributes; chunks that failed (rare, e.g.
+        // proxy error on a single batch) are skipped — lines whose
+        // expensenum lacks an entry will be dropped below (we
+        // intentionally don't fall back to "treat as USD" any more
+        // because that would re-admit non-Fatura headers into the
+        // realised total).
         const fxByExpensenum = new Map<
           string,
           { currency: string; rate: number }
@@ -279,17 +305,32 @@ export function useProjectExpenseLines(
         if (headerFailureCount > 0) {
           // eslint-disable-next-line no-console
           console.warn(
-            `[useProjectExpenseLines] expense-table header fetch failed for ${headerFailureCount}/${headerSettled.length} chunks of ${projectNo} — non-USD lines in those chunks will be treated as USD.`
+            `[useProjectExpenseLines] expense-table header fetch failed for ${headerFailureCount}/${headerSettled.length} chunks of ${projectNo} — lines in those chunks will be dropped (no way to confirm Fatura doc-type / FX rate).`
           );
         }
 
-        // Enrichment: (a) refmap → mserp_refexpenseid textual class,
-        // (b) FX conversion → mserp_amountcur_usd (native amount
-        // multiplied by exchRate when currency != USD). The original
-        // mserp_amountcur is preserved untouched for raw inspector
-        // views. Downstream P&L sums should read `_usd` so totals
-        // never mix currencies.
-        const enriched = all.map((r) => {
+        // Enrichment + Fatura gate:
+        //   (a) Drop the line if its expensenum isn't in the
+        //       Fatura-filtered header map — this is what removes
+        //       the "extra masraflar" (debit notes, manual journals,
+        //       …) that were leaking into the realised total.
+        //   (b) refmap → mserp_refexpenseid textual class.
+        //   (c) FX conversion → mserp_amountcur_usd (native amount
+        //       multiplied by exchRate when currency != USD).
+        // Original mserp_amountcur is preserved untouched for raw
+        // inspector views. Downstream P&L sums should read `_usd`
+        // so totals never mix currencies.
+        const enriched: Record<string, unknown>[] = [];
+        let droppedNonFaturaCount = 0;
+        for (const r of all) {
+          const expensenum = String(r.mserp_expensenum ?? "").trim();
+          const fx = expensenum ? fxByExpensenum.get(expensenum) : undefined;
+          if (!fx) {
+            // Line's header is either non-Fatura or its chunk
+            // failed. Either way, exclude it from realised P&L.
+            droppedNonFaturaCount += 1;
+            continue;
+          }
           const out: Record<string, unknown> = { ...r };
           const code = String(r.mserp_expenseid ?? "").trim();
           const ref = code ? refMap.get(code) : undefined;
@@ -297,27 +338,25 @@ export function useProjectExpenseLines(
 
           const amount = Number(r.mserp_amountcur);
           if (Number.isFinite(amount)) {
-            const expensenum = String(r.mserp_expensenum ?? "").trim();
-            const fx = expensenum ? fxByExpensenum.get(expensenum) : undefined;
-            // USD or unknown currency → no conversion. Otherwise
-            // multiply by the header's exchratesecond (rate is in
-            // USD-per-native-unit form, so e.g. TRY × 0.0750 = USD).
-            const usd =
-              !fx || fx.currency === "USD"
-                ? amount
-                : amount * fx.rate;
-            out.mserp_amountcur_usd = usd;
-            // Optional companion fields — handy in the inspector +
-            // for debugging "why does this line read as $X". They're
-            // attached only when FX context was actually found so the
-            // inspector doesn't show empty columns for USD lines.
-            if (fx) {
-              out.mserp_currencycode = fx.currency;
-              out.mserp_exchratesecond = fx.rate;
-            }
+            // USD → no conversion. Otherwise multiply by the
+            // header's exchratesecond (rate is in USD-per-native
+            // form, so e.g. TRY × 0.0750 ≈ USD).
+            out.mserp_amountcur_usd =
+              fx.currency === "USD" ? amount : amount * fx.rate;
+            // Companion fields surfaced from the header — handy in
+            // the inspector + for debugging "why does this line
+            // read as $X". Attached for every Fatura row.
+            out.mserp_currencycode = fx.currency;
+            out.mserp_exchratesecond = fx.rate;
           }
-          return out;
-        });
+          enriched.push(out);
+        }
+        if (droppedNonFaturaCount > 0) {
+          // eslint-disable-next-line no-console
+          console.info(
+            `[useProjectExpenseLines] dropped ${droppedNonFaturaCount}/${all.length} expense lines for ${projectNo} — header was not Fatura doc-type (or fetch failed).`
+          );
+        }
 
         setRows(enriched);
         setFetchedAt(new Date().toISOString());
