@@ -101,32 +101,44 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
 
         setBusy(true);
 
-        // Stream greeting messages as they arrive.
+        // Stream greeting as activities arrive.
         const GREETING_ID = "greeting";
-        let firstGreeting = true;
+        let hadGreetingChunks = false;
+        let firstGreetingMsg = true;
 
         for await (const activity of client.startConversationStreaming()) {
           if (cancelled) return;
-          if (
-            activity.type === "message" &&
-            activity.from?.role === "bot" &&
-            activity.text
-          ) {
-            if (firstGreeting) {
-              firstGreeting = false;
+          if (isStreamingChunk(activity) && activity.text != null) {
+            hadGreetingChunks = true;
+            if (firstGreetingMsg) {
+              firstGreetingMsg = false;
               setMessages([
-                {
-                  id: GREETING_ID,
-                  role: "bot",
-                  text: activity.text,
-                  streaming: true,
-                },
+                { id: GREETING_ID, role: "bot", text: activity.text, streaming: true },
               ]);
             } else {
               setMessages((prev) =>
                 prev.map((m) =>
+                  m.id === GREETING_ID ? { ...m, text: activity.text! } : m
+                )
+              );
+            }
+          } else if (
+            activity.type === "message" &&
+            activity.from?.role === "bot" &&
+            activity.text
+          ) {
+            if (hadGreetingChunks || firstGreetingMsg) {
+              firstGreetingMsg = false;
+              setMessages((prev) => {
+                const existing = prev.find((m) => m.id === GREETING_ID);
+                const msg = { id: GREETING_ID, role: "bot" as const, text: activity.text!, streaming: true };
+                return existing ? prev.map((m) => m.id === GREETING_ID ? msg : m) : [...prev, msg];
+              });
+            } else {
+              setMessages((prev) =>
+                prev.map((m) =>
                   m.id === GREETING_ID
-                    ? { ...m, text: m.text + "\n" + activity.text }
+                    ? { ...m, text: m.text + "\n" + activity.text! }
                     : m
                 )
               );
@@ -136,14 +148,11 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
 
         if (cancelled) return;
 
-        // Finalize greeting: remove cursor.
-        if (!firstGreeting) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === GREETING_ID ? { ...m, streaming: false } : m
-            )
-          );
-        }
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === GREETING_ID ? { ...m, streaming: false } : m
+          )
+        );
 
         setReady(true);
         setBusy(false);
@@ -187,15 +196,33 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
 
     try {
       const activity: Activity = { type: "message", text };
-      let firstChunk = true;
+      // Track whether we received any streaming typing chunks.
+      // If yes, the final message activity is the authoritative version
+      // (replace, not append). If no chunks came, each message appends.
+      let hadStreamingChunks = false;
+      let firstMessage = true;
 
       for await (const reply of clientRef.current.sendActivityStreaming(
         activity
       )) {
-        if (reply.type === "message" && reply.from?.role === "bot" && reply.text) {
-          if (firstChunk) {
-            firstChunk = false;
-            // First token: replace dots with actual text + cursor.
+        if (isStreamingChunk(reply) && reply.text != null) {
+          // Typing chunk: each has the CUMULATIVE text so far → replace.
+          hadStreamingChunks = true;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === botId
+                ? { ...m, text: reply.text!, pending: false, streaming: true }
+                : m
+            )
+          );
+        } else if (
+          reply.type === "message" &&
+          reply.from?.role === "bot" &&
+          reply.text
+        ) {
+          if (hadStreamingChunks || firstMessage) {
+            firstMessage = false;
+            // Replace: either finalising streaming chunks, or first message.
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === botId
@@ -204,7 +231,7 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
               )
             );
           } else {
-            // Subsequent Activities append with a newline.
+            // Subsequent standalone messages → append.
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === botId
@@ -379,6 +406,27 @@ async function getToken(
   const request = { scopes: [COPILOT_STUDIO_SCOPE], account };
   const result = await instance.acquireTokenSilent(request);
   return result.accessToken;
+}
+
+/**
+ * Returns true when an activity is a streaming text chunk from the SDK.
+ *
+ * The Copilot Studio SDK yields `typing` activities while the bot is
+ * generating its response. Each one carries the CUMULATIVE text so far
+ * (sorted and joined from all received chunks). The streaming metadata
+ * lives in either `channelData.streamType` (legacy) or an `entities`
+ * entry with `type === "streaminfo"`.
+ */
+function isStreamingChunk(activity: Activity): boolean {
+  if (activity.type !== "typing") return false;
+  const cd = activity.channelData as { streamType?: string } | undefined;
+  if (cd?.streamType === "streaming") return true;
+  const entities = activity.entities as
+    | Array<{ type?: string; streamType?: string }>
+    | undefined;
+  return !!entities?.some(
+    (e) => e.type === "streaminfo" && e.streamType === "streaming"
+  );
 }
 
 /** Send a setProjectContext event activity; ignore any bot response. */
