@@ -126,8 +126,13 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
       } catch (err) {
         if (cancelled) return;
         if (err instanceof InteractionRequiredAuthError) {
-          setNeedsConsent(true);
-          setBusy(false);
+          // Silently redirect for consent — no button, no screen.
+          // sessionStorage flag reopens chat on return.
+          sessionStorage.setItem("tyro:openChatAfterAuth", "1");
+          void instance.acquireTokenRedirect({
+            scopes: [ScopeHelper.getScopeFromSettings(COPILOT_SETTINGS)],
+            account: accounts[0],
+          });
           return;
         }
         setError(err instanceof Error ? err.message : "Bağlantı hatası");
