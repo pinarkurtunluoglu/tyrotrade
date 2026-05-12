@@ -67,6 +67,8 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
   const [ready, setReady] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [needsConsent, setNeedsConsent] = React.useState(false);
+  const [initKey, setInitKey] = React.useState(0);
 
   const clientRef = React.useRef<CopilotStudioClient | null>(null);
   const contextRef = React.useRef(projectContext);
@@ -123,6 +125,11 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
         if (ctx) await sendEvent(client, ctx);
       } catch (err) {
         if (cancelled) return;
+        if (err instanceof InteractionRequiredAuthError) {
+          setNeedsConsent(true);
+          setBusy(false);
+          return;
+        }
         setError(err instanceof Error ? err.message : "Bağlantı hatası");
         setBusy(false);
       }
@@ -132,7 +139,7 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
     return () => {
       cancelled = true;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSend() {
     const text = input.trim();
@@ -179,6 +186,40 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
       e.preventDefault();
       void handleSend();
     }
+  }
+
+  if (needsConsent) {
+    const scope = ScopeHelper.getScopeFromSettings(COPILOT_SETTINGS);
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="text-[13px] font-medium text-slate-700">
+          Power Platform izni gerekiyor
+        </p>
+        <p className="text-[11.5px] text-muted-foreground leading-relaxed max-w-xs">
+          TYRO Chat'in Copilot Studio'ya bağlanabilmesi için bir kez izin vermeniz gerekiyor.
+        </p>
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              const account = accounts[0];
+              const result = await instance.acquireTokenPopup({ scopes: [scope], account });
+              if (result.accessToken) {
+                setNeedsConsent(false);
+                clientRef.current = null;
+                setMessages([]);
+                setInitKey((k) => k + 1);
+              }
+            } catch {
+              setError("İzin verilemedi.");
+            }
+          }}
+          className="h-9 px-4 rounded-full text-[13px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
+        >
+          İzin ver ve bağlan
+        </button>
+      </div>
+    );
   }
 
   if (error) {
@@ -308,17 +349,8 @@ async function getToken(
   if (!account) throw new Error("Microsoft oturumu bulunamadı.");
   const scope = ScopeHelper.getScopeFromSettings(COPILOT_SETTINGS);
   const request = { scopes: [scope], account };
-  try {
-    const result = await instance.acquireTokenSilent(request);
-    return result.accessToken;
-  } catch (err) {
-    // Consent not yet granted or token expired — fall back to popup.
-    if (err instanceof InteractionRequiredAuthError) {
-      const result = await instance.acquireTokenPopup(request);
-      return result.accessToken;
-    }
-    throw err;
-  }
+  const result = await instance.acquireTokenSilent(request);
+  return result.accessToken;
 }
 
 /** Drain an Activity async-generator and return bot message texts. */

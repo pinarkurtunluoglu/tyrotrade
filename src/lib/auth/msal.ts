@@ -40,7 +40,16 @@ export const msalConfig: Configuration = {
 
 /** Login request — opens Microsoft sign-in with required scopes. */
 export const loginRequest: RedirectRequest = {
-  scopes: ["openid", "profile", "User.Read", dataverseScope].filter(Boolean),
+  scopes: [
+    "openid",
+    "profile",
+    "User.Read",
+    dataverseScope,
+    // Power Platform scope — needed for Copilot Studio Agent SDK.
+    // Included here so users consent to it on first login rather than
+    // triggering a separate interaction when opening TYRO Chat.
+    "https://api.powerplatform.com/.default",
+  ].filter(Boolean),
   prompt: "select_account",
 };
 
