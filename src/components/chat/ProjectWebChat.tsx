@@ -196,23 +196,18 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
           Power Platform izni gerekiyor
         </p>
         <p className="text-[11.5px] text-muted-foreground leading-relaxed max-w-xs">
-          TYRO Chat'in Copilot Studio'ya bağlanabilmesi için bir kez izin vermeniz gerekiyor.
+          TYRO Chat için Microsoft'un onay sayfasına yönlendirileceksiniz.
+          Geri döndükten sonra chat otomatik açılır.
         </p>
         <button
           type="button"
-          onClick={async () => {
-            try {
-              const account = accounts[0];
-              const result = await instance.acquireTokenPopup({ scopes: [scope], account });
-              if (result.accessToken) {
-                setNeedsConsent(false);
-                clientRef.current = null;
-                setMessages([]);
-                setInitKey((k) => k + 1);
-              }
-            } catch {
-              setError("İzin verilemedi.");
-            }
+          onClick={() => {
+            // Store intent so the chat opens automatically after redirect.
+            sessionStorage.setItem("tyro:openChatAfterAuth", "1");
+            void instance.acquireTokenRedirect({
+              scopes: [scope],
+              account: accounts[0],
+            });
           }}
           className="h-9 px-4 rounded-full text-[13px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
         >

@@ -137,7 +137,14 @@ function TopBar({ title, pathname }: { title: string; pathname: string }) {
   const isMobile = useIsMobile();
   const { setMobileOpen } = useSidebar();
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
-  const [chatOpen, setChatOpen] = React.useState(false);
+  const [chatOpen, setChatOpen] = React.useState(() => {
+    // Auto-open chat when returning from Power Platform consent redirect.
+    if (sessionStorage.getItem("tyro:openChatAfterAuth")) {
+      sessionStorage.removeItem("tyro:openChatAfterAuth");
+      return true;
+    }
+    return false;
+  });
 
   // Resolve the active project when the user is on a detail route so
   // TyroChatDrawer can forward the context to the Copilot agent.
