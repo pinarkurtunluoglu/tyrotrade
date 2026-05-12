@@ -38,17 +38,10 @@ export const msalConfig: Configuration = {
   },
 };
 
-/** Login request — opens Microsoft sign-in with required scopes.
- *
- * `extraScopesToConsent` requests Power Platform consent upfront so the
- * Copilot Studio chat never needs a second interactive auth step.
- * Note: `.default` scopes can't be mixed INTO `scopes` with resource-specific
- * scopes (AADSTS70011) — extraScopesToConsent is the correct mechanism.
- */
+/** Login request — opens Microsoft sign-in with required scopes. */
 export const loginRequest: RedirectRequest = {
   scopes: ["openid", "profile", "User.Read", dataverseScope].filter(Boolean),
   prompt: "select_account",
-  extraScopesToConsent: ["https://api.powerplatform.com/.default"],
 };
 
 /** Token request shape used by `acquireToken()`. */
