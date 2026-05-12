@@ -1,7 +1,4 @@
 import * as React from "react";
-// @ts-expect-error botframework-webchat ships its own typings but the
-// default export isn't re-exported as a named declaration in every
-// version — suppress the module-level complaint.
 import ReactWebChat, { createDirectLine, createStore } from "botframework-webchat";
 
 const TOKEN_URL =
@@ -31,7 +28,7 @@ const STYLE_OPTIONS = {
   sendBoxButtonColorOnFocus: "#4f46e5",
   sendBoxButtonColorOnHover: "#4f46e5",
   sendBoxTextWrap: true,
-  timestampFormat: "relative",
+  timestampFormat: "relative" as const,
 };
 
 export interface ProjectContext {
