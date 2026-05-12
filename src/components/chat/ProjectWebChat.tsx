@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useMsal } from "@azure/msal-react";
+import { InteractionRequiredAuthError } from "@azure/msal-browser";
 import {
   CopilotStudioClient,
   ConnectionSettings,
@@ -306,8 +307,18 @@ async function getToken(
   const account = accounts[0];
   if (!account) throw new Error("Microsoft oturumu bulunamadı.");
   const scope = ScopeHelper.getScopeFromSettings(COPILOT_SETTINGS);
-  const result = await instance.acquireTokenSilent({ scopes: [scope], account });
-  return result.accessToken;
+  const request = { scopes: [scope], account };
+  try {
+    const result = await instance.acquireTokenSilent(request);
+    return result.accessToken;
+  } catch (err) {
+    // Consent not yet granted or token expired — fall back to popup.
+    if (err instanceof InteractionRequiredAuthError) {
+      const result = await instance.acquireTokenPopup(request);
+      return result.accessToken;
+    }
+    throw err;
+  }
 }
 
 /** Drain an Activity async-generator and return bot message texts. */
