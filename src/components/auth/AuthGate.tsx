@@ -9,34 +9,35 @@ import { LoginPage } from "@/pages/LoginPage";
 
 const PP_SCOPE = "https://api.powerplatform.com/.default";
 
+/** sessionStorage flag set BEFORE acquireTokenRedirect for PP consent.
+ *  If we return from a redirect and acquireTokenSilent STILL fails, the
+ *  consent was dismissed or denied — don't redirect again (infinite loop). */
+const PP_CONSENT_ATTEMPTED_KEY = "tyro:ppConsentAttempted";
+
 interface AuthGateProps {
   children: React.ReactNode;
 }
 
 /**
- * Show login UI when no signed-in account; otherwise render children.
+ * Two-phase auth gate:
+ *   1. Dataverse — standard MSAL redirect via loginRequest.
+ *   2. Power Platform — silent token probe after Dataverse session exists.
+ *      Missing consent triggers a one-shot acquireTokenRedirect. On return
+ *      the silent call succeeds and the app renders.
  *
- * Two-phase auth:
- *  1. Dataverse login — standard MSAL redirect via loginRequest.
- *  2. Power Platform consent — acquired silently immediately after Dataverse
- *     login. If consent hasn't been granted yet, AuthGate redirects for it
- *     automatically (no user action needed). On return the silent call
- *     succeeds and the app renders as normal.
- *
- * The result: the user clicks "tyroverse ile bağlan" once, sees the
- * connection overlay while both consents are processed, then lands in
- * the app with the chat fully functional.
+ * Loop protection: a sessionStorage flag tracks whether we've already
+ * redirected for PP consent in this session. If we redirected once and the
+ * silent call STILL fails on return, we proceed without PP and let the chat
+ * surface its own error — never redirect twice in a single session.
  */
 export function AuthGate({ children }: AuthGateProps) {
   const { instance, accounts, inProgress } = useMsal();
 
   const isAuthenticated = accounts.length > 0;
-  const isLoading =
-    inProgress !== InteractionStatus.None &&
-    inProgress !== InteractionStatus.HandleRedirect;
+  // Wait until MSAL is fully idle — covers Startup, Login, AcquireToken,
+  // Logout, HandleRedirect. Probing during any of these is a race.
+  const msalBusy = inProgress !== InteractionStatus.None;
 
-  // true once the PP token is confirmed in cache (or a non-interactive
-  // failure — network, config — that we shouldn't block the app for).
   const [ppReady, setPpReady] = React.useState(false);
 
   React.useEffect(() => {
@@ -45,40 +46,63 @@ export function AuthGate({ children }: AuthGateProps) {
     }
   }, [accounts, isAuthenticated, instance]);
 
-  // As soon as the Dataverse session is established, probe for a PP token.
-  // Silent hit → ppReady immediately. Cache miss / no consent →
-  // acquireTokenRedirect fires automatically; on return the token is in
-  // cache and the silent call succeeds.
   React.useEffect(() => {
-    if (!isAuthenticated || isLoading || ppReady) return;
+    if (!isAuthenticated || msalBusy || ppReady) return;
+    const account = accounts[0];
+    if (!account) return;
+
+    let cancelled = false;
 
     instance
-      .acquireTokenSilent({ scopes: [PP_SCOPE], account: accounts[0] })
-      .then(() => setPpReady(true))
-      .catch((err) => {
-        if (err instanceof InteractionRequiredAuthError) {
-          void instance.acquireTokenRedirect({
-            scopes: [PP_SCOPE],
-            account: accounts[0],
-          });
-          // Page is navigating away; don't update state.
-        } else {
-          // Non-interactive failure (network, misconfiguration).
-          // Don't block the app — the chat will surface its own error.
-          setPpReady(true);
-        }
-      });
-  }, [isAuthenticated, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+      .acquireTokenSilent({ scopes: [PP_SCOPE], account })
+      .then(() => {
+        if (cancelled) return;
+        sessionStorage.removeItem(PP_CONSENT_ATTEMPTED_KEY);
+        setPpReady(true);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
 
-  // Show the login / connection screen while:
-  //  a) not yet authenticated, OR
-  //  b) MSAL is mid-flow, OR
-  //  c) authenticated but PP probe hasn't resolved yet.
-  if (!isAuthenticated || isLoading || !ppReady) {
+        const code = (err as { errorCode?: string })?.errorCode;
+        const needsInteraction =
+          err instanceof InteractionRequiredAuthError ||
+          code === "interaction_required" ||
+          code === "consent_required" ||
+          code === "login_required";
+
+        if (!needsInteraction) {
+          // Network / config error. Don't block the app — chat will
+          // surface its own message if/when the user opens it.
+          setPpReady(true);
+          return;
+        }
+
+        // One-shot redirect: if we already tried in this session and are
+        // back here without a token, the consent was dismissed or denied.
+        // Proceed without PP so the app at least loads.
+        if (sessionStorage.getItem(PP_CONSENT_ATTEMPTED_KEY)) {
+          sessionStorage.removeItem(PP_CONSENT_ATTEMPTED_KEY);
+          setPpReady(true);
+          return;
+        }
+
+        sessionStorage.setItem(PP_CONSENT_ATTEMPTED_KEY, "1");
+        void instance.acquireTokenRedirect({
+          scopes: [PP_SCOPE],
+          account,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, msalBusy]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!isAuthenticated || msalBusy || !ppReady) {
     return (
       <LoginPage
         onLogin={() => instance.loginRedirect(loginRequest)}
-        isLoading={isLoading || (isAuthenticated && !ppReady)}
+        isLoading={msalBusy || (isAuthenticated && !ppReady)}
       />
     );
   }

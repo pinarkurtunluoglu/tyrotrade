@@ -67,7 +67,6 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
   const [ready, setReady] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [needsConsent, setNeedsConsent] = React.useState(false);
   const [initKey, setInitKey] = React.useState(0);
 
   const clientRef = React.useRef<CopilotStudioClient | null>(null);
@@ -193,35 +192,6 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
     }
   }
 
-  if (needsConsent) {
-    const scope = ScopeHelper.getScopeFromSettings(COPILOT_SETTINGS);
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-4 px-6 text-center">
-        <p className="text-[13px] font-medium text-slate-700">
-          Power Platform izni gerekiyor
-        </p>
-        <p className="text-[11.5px] text-muted-foreground leading-relaxed max-w-xs">
-          TYRO Chat için Microsoft'un onay sayfasına yönlendirileceksiniz.
-          Geri döndükten sonra chat otomatik açılır.
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            // Store intent so the chat opens automatically after redirect.
-            sessionStorage.setItem("tyro:openChatAfterAuth", "1");
-            void instance.acquireTokenRedirect({
-              scopes: [scope],
-              account: accounts[0],
-            });
-          }}
-          className="h-9 px-4 rounded-full text-[13px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
-        >
-          İzin ver ve bağlan
-        </button>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 px-6 text-center">
@@ -237,6 +207,7 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
             setError(null);
             setReady(false);
             clientRef.current = null;
+            setInitKey((k) => k + 1);
           }}
           className="text-[12px] font-medium text-indigo-600 hover:text-indigo-700 underline-offset-2 hover:underline"
         >
