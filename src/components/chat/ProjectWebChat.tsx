@@ -8,6 +8,7 @@ import {
 import type { Activity } from "@microsoft/agents-activity";
 import { ArrowUp, Bot } from "lucide-react";
 import { shouldUseMock } from "@/lib/dataverse";
+import { MarkdownText } from "./ChatMessage";
 import { isAuthConfigured, COPILOT_STUDIO_SCOPE } from "@/lib/auth/msal";
 import { cn } from "@/lib/utils";
 
@@ -62,17 +63,42 @@ export function ProjectWebChat(props: ProjectWebChatProps) {
 function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
   const { instance, accounts } = useMsal();
 
-  const [messages, setMessages] = React.useState<ChatMessage[]>([]);
+  // Restore messages only when the stored project matches the current one.
+  // Different project → start fresh so stale history doesn't bleed across.
+  const [messages, setMessages] = React.useState<ChatMessage[]>(() => {
+    try {
+      const raw = sessionStorage.getItem("tyro:chat:session");
+      if (!raw) return [];
+      const stored = JSON.parse(raw) as { projectId: string | null; messages: ChatMessage[] };
+      const currentId = projectContext?.projectId ?? null;
+      return stored.projectId === currentId ? stored.messages : [];
+    } catch {
+      return [];
+    }
+  });
   const [input, setInput] = React.useState("");
   const [ready, setReady] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [initKey, setInitKey] = React.useState(0);
 
+  // True when component mounts with prior session messages → skip greeting.
+  const hadPriorSession = React.useRef(messages.length > 0);
+
   const clientRef = React.useRef<CopilotStudioClient | null>(null);
   const contextRef = React.useRef(projectContext);
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
+
+  // Persist messages + project ID to sessionStorage (cleared on page refresh).
+  React.useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        "tyro:chat:session",
+        JSON.stringify({ projectId: projectContext?.projectId ?? null, messages })
+      );
+    } catch { /* ignore quota errors */ }
+  }, [messages, projectContext?.projectId]);
 
   React.useEffect(() => {
     contextRef.current = projectContext;
@@ -101,13 +127,17 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
 
         setBusy(true);
 
-        // Stream greeting as activities arrive.
+        // Stream greeting — consume the generator to complete the handshake.
+        // If restoring a prior session, suppress display so the old history
+        // remains intact without a duplicate welcome message.
+        const showGreeting = !hadPriorSession.current;
         const GREETING_ID = "greeting";
         let hadGreetingChunks = false;
         let firstGreetingMsg = true;
 
         for await (const activity of client.startConversationStreaming()) {
           if (cancelled) return;
+          if (!showGreeting) continue;
           if (isStreamingChunk(activity) && activity.text != null) {
             hadGreetingChunks = true;
             if (firstGreetingMsg) {
@@ -148,11 +178,13 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
 
         if (cancelled) return;
 
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === GREETING_ID ? { ...m, streaming: false } : m
-          )
-        );
+        if (showGreeting) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === GREETING_ID ? { ...m, streaming: false } : m
+            )
+          );
+        }
 
         setReady(true);
         setBusy(false);
@@ -194,8 +226,15 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
     ]);
     setBusy(true);
 
+    // Silently prepend project context so the bot can resolve "bu proje" /
+    // "bu gemi" references without the user having to repeat the ID.
+    const ctx = contextRef.current;
+    const enrichedText = ctx
+      ? `[Aktif Proje: ${ctx.projectId} - ${ctx.projectName}]\n${text}`
+      : text;
+
     try {
-      const activity: Activity = { type: "message", text };
+      const activity: Activity = { type: "message", text: enrichedText };
       // Track whether we received any streaming typing chunks.
       // If yes, the final message activity is the authoritative version
       // (replace, not append). If no chunks came, each message appends.
@@ -341,7 +380,11 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
                 </span>
               ) : (
                 <>
-                  <span className="whitespace-pre-wrap">{msg.text}</span>
+                  {msg.role === "bot" ? (
+                    <MarkdownText text={msg.text} />
+                  ) : (
+                    <span className="whitespace-pre-wrap">{msg.text}</span>
+                  )}
                   {msg.streaming && (
                     <span className="inline-block w-0.5 h-[1em] bg-slate-500 ml-0.5 align-middle animate-pulse" />
                   )}

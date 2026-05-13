@@ -154,10 +154,14 @@ function TopBar({ title, pathname }: { title: string; pathname: string }) {
   const activeProject = activeProjectId
     ? projects.find((p) => p.projectNo === activeProjectId)
     : undefined;
-  const projectContext =
-    activeProject
-      ? { projectId: activeProject.projectNo, projectName: activeProject.projectName }
-      : undefined;
+  // Build context from URL first so the bot always gets the project ID even
+  // before the real-mode cache populates. Name falls back to the ID string.
+  const projectContext = activeProjectId
+    ? {
+        projectId: activeProjectId,
+        projectName: activeProject?.projectName ?? activeProjectId,
+      }
+    : undefined;
 
   return (
     <>

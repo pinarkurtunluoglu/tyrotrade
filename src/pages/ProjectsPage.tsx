@@ -81,11 +81,28 @@ export function ProjectsPage() {
 
   // When the projects array first arrives (cache hydration after mount), pick
   // the first project as the default selection so the right-rail isn't empty.
+  // Also push the selection into the URL so TopBar's useMatch resolves it and
+  // chat context is available immediately on first visit.
   React.useEffect(() => {
     if (!selectedId && projects.length > 0) {
-      setSelectedId(projects[0].projectNo);
+      const firstId = projects[0].projectNo;
+      setSelectedId(firstId);
+      navigate(`/projects/${firstId}`, { replace: true });
     }
-  }, [projects, selectedId]);
+  }, [projects, selectedId, navigate]);
+
+  // Sync initial selection into URL when projects were already loaded on mount
+  // (e.g. mock mode) — useState initialiser sets selectedId but URL stays at
+  // /projects, so useMatch in TopBar never fires.
+  const didSyncUrl = React.useRef(false);
+  React.useEffect(() => {
+    if (!didSyncUrl.current) {
+      didSyncUrl.current = true;
+      if (!projectId && selectedId) {
+        navigate(`/projects/${selectedId}`, { replace: true });
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [mobileView, setMobileView] = React.useState<MobileView>("list");
 

@@ -73,7 +73,7 @@ export function ChatMessage({ message, className }: ChatMessageProps) {
  * (links, code blocks) is rendered as plain text — Gemini follows the
  * "kısa ve net" guidance from our system prompt so this is enough.
  */
-function MarkdownText({ text }: { text: string }) {
+export function MarkdownText({ text }: { text: string }) {
   // Group consecutive bullet lines into a single <ul>; everything else
   // becomes a <p>. Keeps the renderer trivially lightweight without
   // pulling react-markdown.
