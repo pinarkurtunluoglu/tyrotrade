@@ -234,7 +234,7 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
       : text;
 
     try {
-      const activity: Activity = { type: "message", text: enrichedText };
+      const activity = { type: "message", text: enrichedText } as Activity;
       // Track whether we received any streaming typing chunks.
       // If yes, the final message activity is the authoritative version
       // (replace, not append). If no chunks came, each message appends.
@@ -477,11 +477,11 @@ async function sendEvent(
   client: CopilotStudioClient,
   ctx: ProjectContext
 ): Promise<void> {
-  const activity: Activity = {
+  const activity = {
     type: "event",
     name: "setProjectContext",
     value: { projectId: ctx.projectId, projectName: ctx.projectName },
-  };
+  } as Activity;
   for await (const _ of client.sendActivityStreaming(activity)) {
     // noop — consume generator so the HTTP request completes
   }
