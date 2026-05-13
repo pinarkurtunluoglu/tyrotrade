@@ -15,6 +15,11 @@ import { isAuthConfigured, COPILOT_STUDIO_SCOPE } from "@/lib/auth/msal";
 import { TYRO_CHAT_TONE } from "@/components/layout/TyroChatButton";
 import { cn } from "@/lib/utils";
 
+// Regenerated on every page load (module re-evaluation). Same value across
+// component mount/unmount within a session → messages persist when drawer
+// closes and reopens. New value on page refresh → stale storage is ignored.
+const PAGE_SESSION_ID = Math.random().toString(36).slice(2);
+
 const COPILOT_SETTINGS = new ConnectionSettings({
   directConnectUrl:
     "https://default9efa3bdf67ad47e38dfbd1df79a6d7.fa.environment.api.powerplatform.com/copilotstudio/dataverse-backed/authenticated/bots/crfc1_agentokBCAt/conversations?api-version=2022-03-01-preview",
@@ -66,14 +71,20 @@ export function ProjectWebChat(props: ProjectWebChatProps) {
 function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
   const { instance, accounts } = useMsal();
 
-  // Restore messages only when the stored project matches the current one.
+  // Restore messages only when page session AND project both match.
+  // Page refresh generates a new PAGE_SESSION_ID → stored data is ignored.
   // Different project → start fresh so stale history doesn't bleed across.
   const [messages, setMessages] = React.useState<ChatMessage[]>(() => {
     try {
       const raw = sessionStorage.getItem("tyro:chat:session");
       if (!raw) return [];
-      const stored = JSON.parse(raw) as { projectId: string | null; messages: ChatMessage[] };
+      const stored = JSON.parse(raw) as {
+        pageSessionId: string;
+        projectId: string | null;
+        messages: ChatMessage[];
+      };
       const currentId = projectContext?.projectId ?? null;
+      if (stored.pageSessionId !== PAGE_SESSION_ID) return [];
       return stored.projectId === currentId ? stored.messages : [];
     } catch {
       return [];
@@ -93,12 +104,16 @@ function ProjectWebChatCore({ projectContext }: ProjectWebChatProps) {
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
 
-  // Persist messages + project ID to sessionStorage (cleared on page refresh).
+  // Persist messages tagged with page session + project ID.
   React.useEffect(() => {
     try {
       sessionStorage.setItem(
         "tyro:chat:session",
-        JSON.stringify({ projectId: projectContext?.projectId ?? null, messages })
+        JSON.stringify({
+          pageSessionId: PAGE_SESSION_ID,
+          projectId: projectContext?.projectId ?? null,
+          messages,
+        })
       );
     } catch { /* ignore quota errors */ }
   }, [messages, projectContext?.projectId]);
